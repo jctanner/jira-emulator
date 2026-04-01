@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}{{ issue.key }}: {{ issue.fields.summary | default('') }} - Jira Emulator{% endblock %}
+
+{% block content %}
+<h1>{{ issue.key }}: {{ issue.fields.summary | default('') }}</h1>
+
+{% if issue.fields.parent %}
+<p>
+    <strong>Parent:</strong>
+    <a href="/issue/{{ issue.fields.parent.key }}">{{ issue.fields.parent.key }}</a>
+    &mdash; {{ issue.fields.parent.fields.summary | default('') }}
+</p>
+{% endif %}
+
+<div class="detail-grid">
+    <!-- Left column: description and comments -->
+    <div>
+        <h3>Description</h3>
+        {% if issue.fields.description %}
+        <pre style="white-space: pre-wrap; word-wrap: break-word; background: var(--pico-card-background-color); padding: 1rem; border-radius: 8px;">{{ issue.fields.description }}</pre>
+        {% else %}
+        <p><em>No description provided.</em></p>
+        {% endif %}
+
+        <h3>Comments</h3>
+        {% set comments = issue.fields.comment.comments if issue.fields.comment else [] %}
+        {% if comments %}
+            {% for c in comments %}
+            <article style="margin-bottom: 1rem;">
+                <header>
+                    <strong>{{ c.author.displayName | default('Unknown') if c.author else 'Unknown' }}</strong>
+                    <small style="margin-left: 0.5rem;">{{ c.created | default('') }}</small>
+                </header>
+                <p style="white-space: pre-wrap;">{{ c.body | default('') }}</p>
+            </article>
+            {% endfor %}
+        {% else %}
+        <p><em>No comments.</em></p>
+        {% endif %}
+
+        <!-- Issue Links -->
+        {% set links = issue.fields.issuelinks | default([]) %}
+        {% if links %}
+        <h3>Issue Links</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Relationship</th>
+                    <th>Issue</th>
+                    <th>Summary</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for link in links %}
+                <tr>
+                    {% if link.outwardIssue is defined and link.outwardIssue %}
+                    <td>{{ link.type.outward | default('') }}</td>
+                    <td><a href="/issue/{{ link.outwardIssue.key }}">{{ link.outwardIssue.key }}</a></td>
+                    <td>{{ link.outwardIssue.fields.summary | default('') }}</td>
+                    {% elif link.inwardIssue is defined and link.inwardIssue %}
+                    <td>{{ link.type.inward | default('') }}</td>
+                    <td><a href="/issue/{{ link.inwardIssue.key }}">{{ link.inwardIssue.key }}</a></td>
+                    <td>{{ link.inwardIssue.fields.summary | default('') }}</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+
+    <!-- Right column: metadata sidebar -->
+    <div class="detail-sidebar">
+        <dl>
+            <dt>Status</dt>
+            <dd>
+                {% if issue.fields.status %}
+                    {% set cat = issue.fields.status.statusCategory.key | default('new') %}
+                    <span class="badge {% if cat == 'done' %}badge-done{% elif cat == 'indeterminate' %}badge-progress{% else %}badge-new{% endif %}">
+                        {{ issue.fields.status.name }}
+                    </span>
+                {% else %}
+                &mdash;
+                {% endif %}
+            </dd>
+
+            <dt>Priority</dt>
+            <dd>{{ issue.fields.priority.name if issue.fields.priority else '&mdash;' }}</dd>
+
+            <dt>Type</dt>
+            <dd>{{ issue.fields.issuetype.name if issue.fields.issuetype else '&mdash;' }}</dd>
+
+            <dt>Assignee</dt>
+            <dd>{{ issue.fields.assignee.displayName if issue.fields.assignee else 'Unassigned' }}</dd>
+
+            <dt>Reporter</dt>
+            <dd>{{ issue.fields.reporter.displayName if issue.fields.reporter else '&mdash;' }}</dd>
+
+            <dt>Created</dt>
+            <dd>{{ issue.fields.created | default('&mdash;') }}</dd>
+
+            <dt>Updated</dt>
+            <dd>{{ issue.fields.updated | default('&mdash;') }}</dd>
+
+            <dt>Resolution</dt>
+            <dd>{{ issue.fields.resolution.name if issue.fields.resolution else 'Unresolved' }}</dd>
+
+            <dt>Resolution Date</dt>
+            <dd>{{ issue.fields.resolutiondate | default('&mdash;') }}</dd>
+
+            <dt>Due Date</dt>
+            <dd>{{ issue.fields.duedate | default('&mdash;') }}</dd>
+
+            <dt>Labels</dt>
+            <dd>
+                {% if issue.fields.labels %}
+                    {{ issue.fields.labels | join(', ') }}
+                {% else %}
+                    &mdash;
+                {% endif %}
+            </dd>
+
+            <dt>Components</dt>
+            <dd>
+                {% if issue.fields.components %}
+                    {{ issue.fields.components | map(attribute='name') | join(', ') }}
+                {% else %}
+                    &mdash;
+                {% endif %}
+            </dd>
+
+            <dt>Fix Versions</dt>
+            <dd>
+                {% if issue.fields.fixVersions %}
+                    {{ issue.fields.fixVersions | map(attribute='name') | join(', ') }}
+                {% else %}
+                    &mdash;
+                {% endif %}
+            </dd>
+        </dl>
+    </div>
+</div>
+{% endblock %}

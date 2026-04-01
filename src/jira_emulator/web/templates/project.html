@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project.name }} - Jira Emulator{% endblock %}
+
+{% block content %}
+<h1>{{ project.name }}</h1>
+<p><strong>Key:</strong> {{ project.key }} &mdash; <strong>Total Issues:</strong> {{ total_issues }}</p>
+<p><a href="/issues?project={{ project.key }}">View all issues</a></p>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+    <div>
+        <h3>Status Breakdown</h3>
+        {% if status_counts %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Count</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sc in status_counts %}
+                <tr>
+                    <td>{{ sc.name }}</td>
+                    <td>{{ sc.count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No issues yet.</p>
+        {% endif %}
+    </div>
+
+    <div>
+        <h3>Issue Type Breakdown</h3>
+        {% if type_counts %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Count</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tc in type_counts %}
+                <tr>
+                    <td>{{ tc.name }}</td>
+                    <td>{{ tc.count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No issues yet.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

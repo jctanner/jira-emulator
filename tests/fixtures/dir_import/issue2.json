@@ -1,0 +1,17 @@
+{
+  "key": "DIRPROJ-2",
+  "summary": "Directory import issue 2",
+  "status": "New",
+  "priority": "Minor",
+  "issue_type": "Task",
+  "reporter": "Dir User",
+  "created": "2025-03-02T12:00:00.000+0000",
+  "updated": "2025-03-02T12:00:00.000+0000",
+  "project": {"key": "DIRPROJ", "name": "Directory Import Project"},
+  "components": [],
+  "labels": ["dir-test"],
+  "affects_versions": [],
+  "fix_versions": [],
+  "target_versions": [],
+  "resolution": null
+}

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Jira Emulator{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <style>
+        :root { --pico-font-size: 90%; }
+        nav ul { list-style: none; display: flex; gap: 1rem; margin: 0; padding: 0; }
+        nav a { text-decoration: none; }
+        .badge { display: inline-block; padding: 0.15em 0.5em; border-radius: 4px; font-size: 0.85em; font-weight: 600; }
+        .badge-new { background: #e3f2fd; color: #1565c0; }
+        .badge-progress { background: #fff3e0; color: #e65100; }
+        .badge-done { background: #e8f5e9; color: #2e7d32; }
+        .detail-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; }
+        .detail-sidebar dl { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 1rem; }
+        .detail-sidebar dt { font-weight: 600; color: var(--pico-muted-color); }
+        table { font-size: 0.9em; }
+        .filters { display: flex; gap: 1rem; align-items: end; flex-wrap: wrap; margin-bottom: 1rem; }
+        .filters label { margin-bottom: 0; }
+        .filters select, .filters input { margin-bottom: 0; padding: 0.4em; }
+        footer { text-align: center; color: var(--pico-muted-color); font-size: 0.85em; padding: 1rem 0; }
+    </style>
+</head>
+<body>
+    <header class="container">
+        <nav>
+            <ul>
+                <li><strong>Jira Emulator</strong></li>
+            </ul>
+            <ul>
+                <li><a href="/">Home</a></li>
+                <li><a href="/issues">Issues</a></li>
+                <li><a href="/admin/import">Import</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    <footer class="container">
+        Jira Emulator v{{ version | default('0.1.0') }}
+    </footer>
+</body>
+</html>

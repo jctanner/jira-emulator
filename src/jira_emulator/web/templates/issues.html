@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Issues - Jira Emulator{% endblock %}
+
+{% block content %}
+<h1>Issues</h1>
+
+<form method="get" action="/issues">
+    <fieldset>
+        <label>
+            JQL
+            <input type="text" name="jql" value="{{ filters.jql }}" placeholder='e.g. project = RHAIRFE AND status = "In Progress" ORDER BY created DESC' style="font-family: monospace;">
+        </label>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button type="submit">Search</button>
+            {% if filters.jql %}<a href="/issues" role="button" class="outline secondary">Clear</a>{% endif %}
+        </div>
+    </fieldset>
+</form>
+
+{% if not filters.jql %}
+<details {% if filters.project or filters.status or filters.q %}open{% endif %}>
+    <summary>Quick filters</summary>
+    <form method="get" action="/issues">
+        <div class="filters">
+            <label>
+                Project
+                <select name="project">
+                    <option value="">All</option>
+                    {% for p in projects %}
+                    <option value="{{ p.key }}" {% if filters.project == p.key %}selected{% endif %}>{{ p.key }} - {{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label>
+                Status
+                <select name="status">
+                    <option value="">All</option>
+                    {% for s in statuses %}
+                    <option value="{{ s.name }}" {% if filters.status == s.name %}selected{% endif %}>{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label>
+                Search
+                <input type="text" name="q" value="{{ filters.q }}" placeholder="Search summaries...">
+            </label>
+
+            <button type="submit">Filter</button>
+        </div>
+    </form>
+</details>
+{% endif %}
+
+{% if jql_error %}
+<p style="color: var(--pico-del-color);">JQL Error: {{ jql_error }}</p>
+{% endif %}
+
+<p>{{ total }} issue{{ 's' if total != 1 else '' }} found</p>
+
+{% if issues %}
+<table>
+    <thead>
+        <tr>
+            <th>Key</th>
+            <th>Summary</th>
+            <th>Status</th>
+            <th>Priority</th>
+            <th>Assignee</th>
+            <th>Type</th>
+            <th>Created</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for issue in issues %}
+        <tr>
+            <td><a href="/issue/{{ issue.key }}">{{ issue.key }}</a></td>
+            <td>{{ issue.fields.summary | default('') }}</td>
+            <td>
+                {% if issue.fields.status %}
+                    {% set cat = issue.fields.status.statusCategory.key | default('new') %}
+                    <span class="badge {% if cat == 'done' %}badge-done{% elif cat == 'indeterminate' %}badge-progress{% else %}badge-new{% endif %}">
+                        {{ issue.fields.status.name }}
+                    </span>
+                {% endif %}
+            </td>
+            <td>{{ issue.fields.priority.name | default('') if issue.fields.priority else '' }}</td>
+            <td>{{ issue.fields.assignee.displayName | default('') if issue.fields.assignee else 'Unassigned' }}</td>
+            <td>{{ issue.fields.issuetype.name | default('') if issue.fields.issuetype else '' }}</td>
+            <td>{{ issue.fields.created | default('') }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<nav style="display: flex; justify-content: center; gap: 1rem; align-items: center; margin-top: 1rem;">
+    {% if page > 1 %}
+    <a href="/issues?{% if filters.jql %}jql={{ filters.jql | urlencode }}{% else %}project={{ filters.project }}&status={{ filters.status }}&q={{ filters.q }}{% endif %}&page={{ page - 1 }}" role="button" class="outline">Previous</a>
+    {% else %}
+    <button disabled class="outline">Previous</button>
+    {% endif %}
+
+    <span>Page {{ page }} of {{ total_pages }}</span>
+
+    {% if page < total_pages %}
+    <a href="/issues?{% if filters.jql %}jql={{ filters.jql | urlencode }}{% else %}project={{ filters.project }}&status={{ filters.status }}&q={{ filters.q }}{% endif %}&page={{ page + 1 }}" role="button" class="outline">Next</a>
+    {% else %}
+    <button disabled class="outline">Next</button>
+    {% endif %}
+</nav>
+{% else %}
+<p>No issues found matching the current filters.</p>
+{% endif %}
+{% endblock %}

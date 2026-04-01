@@ -1,0 +1,326 @@
+"""Web UI routes for the Jira Emulator — read-only HTML views."""
+
+import json
+import logging
+import math
+
+from fastapi import APIRouter, Depends, Request, UploadFile, File
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from jira_emulator import __version__
+from jira_emulator.database import get_db
+from jira_emulator.models.issue import Issue
+from jira_emulator.models.project import Project
+from jira_emulator.models.user import User
+from jira_emulator.models.status import Status
+from jira_emulator.models.issue_type import IssueType
+from jira_emulator.services import issue_service, search_service
+
+logger = logging.getLogger(__name__)
+
+# Template directory is relative to this file
+import os
+
+templates = Jinja2Templates(
+    directory=os.path.join(os.path.dirname(__file__), "templates")
+)
+
+router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# GET / — Home page
+# ---------------------------------------------------------------------------
+@router.get("/", response_class=HTMLResponse)
+async def home(request: Request, db: AsyncSession = Depends(get_db)):
+    """Dashboard showing project list and summary statistics."""
+
+    # Total counts
+    total_issues = (await db.execute(select(func.count(Issue.id)))).scalar_one()
+    total_projects = (await db.execute(select(func.count(Project.id)))).scalar_one()
+    total_users = (await db.execute(select(func.count(User.id)))).scalar_one()
+
+    # Projects with per-project issue counts
+    stmt = (
+        select(Project.key, Project.name, func.count(Issue.id).label("issue_count"))
+        .outerjoin(Issue, Issue.project_id == Project.id)
+        .group_by(Project.id)
+        .order_by(Project.key)
+    )
+    rows = (await db.execute(stmt)).all()
+    projects = [
+        {"key": r.key, "name": r.name, "issue_count": r.issue_count} for r in rows
+    ]
+
+    return templates.TemplateResponse(
+        request=request,
+        name="home.html",
+        context={
+            "projects": projects,
+            "total_issues": total_issues,
+            "total_projects": total_projects,
+            "total_users": total_users,
+            "version": __version__,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /project/{key} — Project detail
+# ---------------------------------------------------------------------------
+@router.get("/project/{key}", response_class=HTMLResponse)
+async def project_detail(request: Request, key: str, db: AsyncSession = Depends(get_db)):
+    """Show a single project with status and type breakdowns."""
+
+    result = await db.execute(select(Project).where(Project.key == key))
+    project = result.scalar_one_or_none()
+    if project is None:
+        return HTMLResponse("<h1>Project not found</h1>", status_code=404)
+
+    # Issue counts by status
+    status_stmt = (
+        select(Status.name, func.count(Issue.id).label("count"))
+        .join(Issue, Issue.status_id == Status.id)
+        .where(Issue.project_id == project.id)
+        .group_by(Status.name)
+        .order_by(Status.name)
+    )
+    status_rows = (await db.execute(status_stmt)).all()
+    status_counts = [{"name": r.name, "count": r.count} for r in status_rows]
+
+    # Issue counts by type
+    type_stmt = (
+        select(IssueType.name, func.count(Issue.id).label("count"))
+        .join(Issue, Issue.issue_type_id == IssueType.id)
+        .where(Issue.project_id == project.id)
+        .group_by(IssueType.name)
+        .order_by(IssueType.name)
+    )
+    type_rows = (await db.execute(type_stmt)).all()
+    type_counts = [{"name": r.name, "count": r.count} for r in type_rows]
+
+    total_issues = sum(sc["count"] for sc in status_counts)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="project.html",
+        context={
+            "project": project,
+            "status_counts": status_counts,
+            "type_counts": type_counts,
+            "total_issues": total_issues,
+            "version": __version__,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /issues — Issue list with filtering
+# ---------------------------------------------------------------------------
+@router.get("/issues", response_class=HTMLResponse)
+async def issue_list(
+    request: Request,
+    jql: str | None = None,
+    project: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+    page: int = 1,
+    sort: str = "created",
+    order: str = "DESC",
+    db: AsyncSession = Depends(get_db),
+):
+    """Paginated, filterable issue list."""
+
+    page_size = 25
+    if page < 1:
+        page = 1
+
+    jql_error = None
+
+    if jql:
+        # Use raw JQL directly
+        search_jql = jql
+    else:
+        # Build JQL from quick-filter parameters
+        jql_parts: list[str] = []
+        if project:
+            jql_parts.append(f'project = "{project}"')
+        if status:
+            jql_parts.append(f'status = "{status}"')
+        if q:
+            jql_parts.append(f'summary ~ "{q}"')
+
+        search_jql = " AND ".join(jql_parts) if jql_parts else "ORDER BY created DESC"
+
+        if jql_parts:
+            search_jql += f" ORDER BY {sort} {order}"
+
+    start_at = (page - 1) * page_size
+
+    try:
+        search_result = await search_service.search_issues(
+            db=db,
+            jql=search_jql,
+            start_at=start_at,
+            max_results=page_size,
+            current_user=None,
+            base_url=str(request.base_url).rstrip("/"),
+        )
+        issues = search_result["issues"]
+        total = search_result["total"]
+    except (ValueError, Exception) as exc:
+        logger.warning("JQL search failed: %s", exc)
+        jql_error = str(exc)
+        issues = []
+        total = 0
+
+    total_pages = max(1, math.ceil(total / page_size))
+
+    # Dropdown data (only needed when not using raw JQL)
+    all_projects = (
+        (await db.execute(select(Project).order_by(Project.key))).scalars().all()
+    )
+    all_statuses = (
+        (await db.execute(select(Status).order_by(Status.name))).scalars().all()
+    )
+
+    filters = {
+        "jql": jql or "",
+        "project": project or "",
+        "status": status or "",
+        "q": q or "",
+        "sort": sort,
+        "order": order,
+    }
+
+    return templates.TemplateResponse(
+        request=request,
+        name="issues.html",
+        context={
+            "issues": issues,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "projects": all_projects,
+            "statuses": all_statuses,
+            "filters": filters,
+            "jql_error": jql_error,
+            "version": __version__,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /issue/{key} — Issue detail
+# ---------------------------------------------------------------------------
+@router.get("/issue/{key}", response_class=HTMLResponse)
+async def issue_detail(request: Request, key: str, db: AsyncSession = Depends(get_db)):
+    """Full issue detail view."""
+
+    issue = await issue_service.get_issue(db, key)
+    if issue is None:
+        return HTMLResponse("<h1>Issue not found</h1>", status_code=404)
+
+    base_url = str(request.base_url).rstrip("/")
+    formatted = await issue_service.format_issue_response(issue, base_url, db)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="issue_detail.html",
+        context={
+            "issue": formatted,
+            "version": __version__,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/import — Import form
+# ---------------------------------------------------------------------------
+@router.get("/admin/import", response_class=HTMLResponse)
+async def admin_import_form(request: Request):
+    """Render the JSON import upload form."""
+    return templates.TemplateResponse(
+        request=request,
+        name="admin_import.html",
+        context={
+            "version": __version__,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/import — Handle import upload
+# ---------------------------------------------------------------------------
+@router.post("/admin/import", response_class=HTMLResponse)
+async def admin_import_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept a JSON file upload and import issues."""
+    from jira_emulator.services.import_service import import_issues
+
+    try:
+        content = await file.read()
+        data = json.loads(content)
+
+        if isinstance(data, dict):
+            data = [data]
+
+        if not isinstance(data, list):
+            raise ValueError(
+                f"Expected a JSON array or object, got {type(data).__name__}"
+            )
+
+        result = await import_issues(db, data)
+
+        return templates.TemplateResponse(
+            request=request,
+            name="admin_import.html",
+            context={
+                "result": {
+                    "imported": result.imported,
+                    "updated": result.updated,
+                    "errors": result.errors,
+                    "projects_created": result.projects_created,
+                    "users_created": result.users_created,
+                },
+                "version": __version__,
+            },
+        )
+    except json.JSONDecodeError as exc:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin_import.html",
+            context={
+                "result": {
+                    "imported": 0,
+                    "updated": 0,
+                    "errors": [f"Invalid JSON: {exc}"],
+                    "projects_created": [],
+                    "users_created": [],
+                },
+                "version": __version__,
+            },
+        )
+    except Exception as exc:
+        logger.exception("Import failed")
+        return templates.TemplateResponse(
+            request=request,
+            name="admin_import.html",
+            context={
+                "result": {
+                    "imported": 0,
+                    "updated": 0,
+                    "errors": [str(exc)],
+                    "projects_created": [],
+                    "users_created": [],
+                },
+                "version": __version__,
+            },
+        )

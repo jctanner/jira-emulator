@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Jira Emulator{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+<div style="display: flex; gap: 2rem; margin-bottom: 2rem;">
+    <article style="flex: 1; text-align: center;">
+        <h3>{{ total_issues }}</h3>
+        <p>Total Issues</p>
+    </article>
+    <article style="flex: 1; text-align: center;">
+        <h3>{{ total_projects }}</h3>
+        <p>Total Projects</p>
+    </article>
+    <article style="flex: 1; text-align: center;">
+        <h3>{{ total_users }}</h3>
+        <p>Total Users</p>
+    </article>
+</div>
+
+<h2>Projects</h2>
+
+{% if projects %}
+<table>
+    <thead>
+        <tr>
+            <th>Key</th>
+            <th>Name</th>
+            <th>Issues</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in projects %}
+        <tr>
+            <td><a href="/project/{{ p.key }}">{{ p.key }}</a></td>
+            <td>{{ p.name }}</td>
+            <td>{{ p.issue_count }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No projects yet. <a href="/admin/import">Import some data</a> to get started.</p>
+{% endif %}
+{% endblock %}
