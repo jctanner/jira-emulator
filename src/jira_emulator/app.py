@@ -51,8 +51,11 @@ async def lifespan(app: FastAPI):
             except Exception:
                 logger.exception("Failed to load seed data")
 
+    from jira_emulator.services.seed_service import DEFAULT_API_TOKEN
+
     logger.info("Auth mode: %s", settings.AUTH_MODE)
     logger.info("Default credentials: %s / %s", settings.DEFAULT_USER, settings.ADMIN_PASSWORD)
+    logger.info("Default API token: %s", DEFAULT_API_TOKEN)
     logger.info("Web UI: %s", settings.BASE_URL)
 
     # Import on startup
@@ -95,6 +98,16 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Rewrite /rest/api/3/ -> /rest/api/2/ so v3 clients work
+    class ApiVersionRewriteMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            if request.url.path.startswith("/rest/api/3/"):
+                new_path = "/rest/api/2/" + request.url.path[len("/rest/api/3/"):]
+                request.scope["path"] = new_path
+            return await call_next(request)
+
+    app.add_middleware(ApiVersionRewriteMiddleware)
 
     # Request logging
     class RequestLoggingMiddleware(BaseHTTPMiddleware):

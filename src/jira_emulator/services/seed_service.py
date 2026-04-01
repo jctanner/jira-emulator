@@ -21,9 +21,11 @@ from jira_emulator.models import (
     Workflow,
     WorkflowTransition,
 )
-from jira_emulator.services.auth_service import hash_password
+from jira_emulator.services.auth_service import hash_password, hash_token
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_API_TOKEN = "jira-emulator-default-token"
 
 PROJECTS = [
     {"key": "RHAIRFE", "name": "Red Hat AI RFE project", "description": "Request for Enhancement tracking"},
@@ -250,6 +252,17 @@ async def load_seed_data(db: AsyncSession, admin_password: str = "admin") -> Non
         password_hash=hash_password(admin_password),
     )
     db.add(admin)
+    await db.flush()
+
+    # Default API token
+    from jira_emulator.models.api_token import ApiToken
+
+    db.add(ApiToken(
+        user_id=admin.id,
+        name="Default Token",
+        token_hash=hash_token(DEFAULT_API_TOKEN),
+        token_prefix=DEFAULT_API_TOKEN[:8],
+    ))
 
     await db.commit()
     logger.info("Seed data loaded successfully")
