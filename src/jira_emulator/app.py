@@ -51,6 +51,10 @@ async def lifespan(app: FastAPI):
             except Exception:
                 logger.exception("Failed to load seed data")
 
+    logger.info("Auth mode: %s", settings.AUTH_MODE)
+    logger.info("Default credentials: %s / %s", settings.DEFAULT_USER, settings.ADMIN_PASSWORD)
+    logger.info("Web UI: %s", settings.BASE_URL)
+
     # Import on startup
     if settings.IMPORT_ON_STARTUP:
         import os
