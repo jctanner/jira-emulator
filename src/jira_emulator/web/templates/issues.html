@@ -5,112 +5,117 @@
 {% block content %}
 <h1>Issues</h1>
 
-<form method="get" action="/issues">
-    <fieldset>
-        <label>
-            JQL
-            <input type="text" name="jql" value="{{ filters.jql }}" placeholder='e.g. project = RHAIRFE AND status = "In Progress" ORDER BY created DESC' style="font-family: monospace;">
-        </label>
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <button type="submit">Search</button>
-            {% if filters.jql %}<a href="/issues" role="button" class="outline secondary">Clear</a>{% endif %}
-        </div>
-    </fieldset>
-</form>
-
-{% if not filters.jql %}
-<details {% if filters.project or filters.status or filters.q %}open{% endif %}>
-    <summary>Quick filters</summary>
+<div class="card">
     <form method="get" action="/issues">
-        <div class="filters">
-            <label>
-                Project
-                <select name="project">
-                    <option value="">All</option>
-                    {% for p in projects %}
-                    <option value="{{ p.key }}" {% if filters.project == p.key %}selected{% endif %}>{{ p.key }} - {{ p.name }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-
-            <label>
-                Status
-                <select name="status">
-                    <option value="">All</option>
-                    {% for s in statuses %}
-                    <option value="{{ s.name }}" {% if filters.status == s.name %}selected{% endif %}>{{ s.name }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-
-            <label>
-                Search
-                <input type="text" name="q" value="{{ filters.q }}" placeholder="Search summaries...">
-            </label>
-
-            <button type="submit">Filter</button>
+        <div class="jql-bar">
+            <input type="text" name="jql" value="{{ filters.jql }}" placeholder='e.g. project = RHAIRFE AND status = "In Progress" ORDER BY created DESC'>
+            <button type="submit" class="btn btn-primary">Search</button>
+            {% if filters.jql %}<a href="/issues" class="btn btn-default">Clear</a>{% endif %}
         </div>
     </form>
-</details>
-{% endif %}
 
-{% if jql_error %}
-<p style="color: var(--pico-del-color);">JQL Error: {{ jql_error }}</p>
-{% endif %}
+    {% if not filters.jql %}
+    <details {% if filters.project or filters.status or filters.q %}open{% endif %}>
+        <summary>Quick filters</summary>
+        <form method="get" action="/issues" style="margin-top: var(--ds-space-100);">
+            <div class="filters-bar">
+                <div class="form-field">
+                    <label>Project</label>
+                    <select name="project">
+                        <option value="">All</option>
+                        {% for p in projects %}
+                        <option value="{{ p.key }}" {% if filters.project == p.key %}selected{% endif %}>{{ p.key }} - {{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
 
-<p>{{ total }} issue{{ 's' if total != 1 else '' }} found</p>
+                <div class="form-field">
+                    <label>Status</label>
+                    <select name="status">
+                        <option value="">All</option>
+                        {% for s in statuses %}
+                        <option value="{{ s.name }}" {% if filters.status == s.name %}selected{% endif %}>{{ s.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
 
-{% if issues %}
-<table>
-    <thead>
-        <tr>
-            <th>Key</th>
-            <th>Summary</th>
-            <th>Status</th>
-            <th>Priority</th>
-            <th>Assignee</th>
-            <th>Type</th>
-            <th>Created</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for issue in issues %}
-        <tr>
-            <td><a href="/issue/{{ issue.key }}">{{ issue.key }}</a></td>
-            <td>{{ issue.fields.summary | default('') }}</td>
-            <td>
-                {% if issue.fields.status %}
-                    {% set cat = issue.fields.status.statusCategory.key | default('new') %}
-                    <span class="badge {% if cat == 'done' %}badge-done{% elif cat == 'indeterminate' %}badge-progress{% else %}badge-new{% endif %}">
-                        {{ issue.fields.status.name }}
-                    </span>
-                {% endif %}
-            </td>
-            <td>{{ issue.fields.priority.name | default('') if issue.fields.priority else '' }}</td>
-            <td>{{ issue.fields.assignee.displayName | default('') if issue.fields.assignee else 'Unassigned' }}</td>
-            <td>{{ issue.fields.issuetype.name | default('') if issue.fields.issuetype else '' }}</td>
-            <td>{{ issue.fields.created | default('') }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+                <div class="form-field">
+                    <label>Search</label>
+                    <input type="text" name="q" value="{{ filters.q }}" placeholder="Search summaries...">
+                </div>
 
-<nav style="display: flex; justify-content: center; gap: 1rem; align-items: center; margin-top: 1rem;">
-    {% if page > 1 %}
-    <a href="/issues?{% if filters.jql %}jql={{ filters.jql | urlencode }}{% else %}project={{ filters.project }}&status={{ filters.status }}&q={{ filters.q }}{% endif %}&page={{ page - 1 }}" role="button" class="outline">Previous</a>
-    {% else %}
-    <button disabled class="outline">Previous</button>
+                <button type="submit" class="btn btn-primary">Filter</button>
+            </div>
+        </form>
+    </details>
     {% endif %}
 
-    <span>Page {{ page }} of {{ total_pages }}</span>
-
-    {% if page < total_pages %}
-    <a href="/issues?{% if filters.jql %}jql={{ filters.jql | urlencode }}{% else %}project={{ filters.project }}&status={{ filters.status }}&q={{ filters.q }}{% endif %}&page={{ page + 1 }}" role="button" class="outline">Next</a>
-    {% else %}
-    <button disabled class="outline">Next</button>
+    {% if jql_error %}
+    <div class="result-banner result-banner-error" style="margin-top: var(--ds-space-100);">
+        <strong>JQL Error:</strong> {{ jql_error }}
+    </div>
     {% endif %}
-</nav>
-{% else %}
-<p>No issues found matching the current filters.</p>
-{% endif %}
+</div>
+
+<div class="card">
+    <p style="color: var(--ds-text-subtlest); margin-bottom: var(--ds-space-150);">
+        {{ total }} issue{{ 's' if total != 1 else '' }} found
+    </p>
+
+    {% if issues %}
+    <table>
+        <thead>
+            <tr>
+                <th>Key</th>
+                <th>Summary</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Assignee</th>
+                <th>Type</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for issue in issues %}
+            <tr>
+                <td><a class="issue-key-link" href="/issue/{{ issue.key }}">{{ issue.key }}</a></td>
+                <td>{{ issue.fields.summary | default('') }}</td>
+                <td>
+                    {% if issue.fields.status %}
+                        {% set cat = issue.fields.status.statusCategory.key | default('new') %}
+                        <span class="lozenge {% if cat == 'done' %}lozenge-done{% elif cat == 'indeterminate' %}lozenge-inprogress{% else %}lozenge-new{% endif %}">
+                            {{ issue.fields.status.name }}
+                        </span>
+                    {% endif %}
+                </td>
+                <td>{{ issue.fields.priority.name | default('') if issue.fields.priority else '' }}</td>
+                <td>{{ issue.fields.assignee.displayName | default('') if issue.fields.assignee else 'Unassigned' }}</td>
+                <td>{{ issue.fields.issuetype.name | default('') if issue.fields.issuetype else '' }}</td>
+                <td style="white-space: nowrap; color: var(--ds-text-subtlest);">{{ issue.fields.created | default('') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <nav class="pagination">
+        {% if page > 1 %}
+        <a href="/issues?{% if filters.jql %}jql={{ filters.jql | urlencode }}{% else %}project={{ filters.project }}&status={{ filters.status }}&q={{ filters.q }}{% endif %}&page={{ page - 1 }}" class="btn btn-default">Previous</a>
+        {% else %}
+        <button disabled class="btn btn-default" style="opacity: 0.4; cursor: default;">Previous</button>
+        {% endif %}
+
+        <span>Page {{ page }} of {{ total_pages }}</span>
+
+        {% if page < total_pages %}
+        <a href="/issues?{% if filters.jql %}jql={{ filters.jql | urlencode }}{% else %}project={{ filters.project }}&status={{ filters.status }}&q={{ filters.q }}{% endif %}&page={{ page + 1 }}" class="btn btn-default">Next</a>
+        {% else %}
+        <button disabled class="btn btn-default" style="opacity: 0.4; cursor: default;">Next</button>
+        {% endif %}
+    </nav>
+    {% else %}
+    <div class="empty-state">
+        <p>No issues found matching the current filters.</p>
+    </div>
+    {% endif %}
+</div>
 {% endblock %}

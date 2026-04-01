@@ -5,60 +5,77 @@
 {% block content %}
 <h1>Import Issues</h1>
 
-<p>Upload a JSON file containing an array of issue objects (or a single issue object) to import into the emulator.</p>
+<div class="card">
+    <p style="color: var(--ds-text-subtle); margin-bottom: var(--ds-space-200);">
+        Upload a JSON file containing an array of issue objects (or a single issue object) to import into the emulator.
+    </p>
 
-<form method="post" action="/admin/import" enctype="multipart/form-data">
-    <label>
-        JSON File
-        <input type="file" name="file" accept=".json" required>
-    </label>
-    <button type="submit">Import</button>
-</form>
+    <form method="post" action="/admin/import" enctype="multipart/form-data">
+        <div class="form-field">
+            <label>JSON File</label>
+            <input type="file" name="file" accept=".json" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Import</button>
+    </form>
+</div>
 
 {% if result is defined and result %}
-<hr>
-<h2>Import Results</h2>
+<div class="card">
+    <h2>Import Results</h2>
 
-<table>
-    <tbody>
-        <tr>
-            <td><strong>Imported</strong></td>
-            <td>{{ result.imported }}</td>
-        </tr>
-        <tr>
-            <td><strong>Updated</strong></td>
-            <td>{{ result.updated }}</td>
-        </tr>
-        <tr>
-            <td><strong>Projects Created</strong></td>
-            <td>
-                {% if result.projects_created %}
-                    {{ result.projects_created | join(', ') }}
-                {% else %}
-                    None
-                {% endif %}
-            </td>
-        </tr>
-        <tr>
-            <td><strong>Users Created</strong></td>
-            <td>
-                {% if result.users_created %}
-                    {{ result.users_created | join(', ') }}
-                {% else %}
-                    None
-                {% endif %}
-            </td>
-        </tr>
-    </tbody>
-</table>
+    {% if result.errors %}
+    <div class="result-banner result-banner-error" style="margin-bottom: var(--ds-space-200);">
+        {{ result.errors | length }} error{{ 's' if result.errors | length != 1 else '' }} occurred during import.
+    </div>
+    {% elif result.imported > 0 or result.updated > 0 %}
+    <div class="result-banner result-banner-success" style="margin-bottom: var(--ds-space-200);">
+        Import completed successfully.
+    </div>
+    {% endif %}
 
-{% if result.errors %}
-<h3>Errors</h3>
-<ul>
-    {% for err in result.errors %}
-    <li style="color: var(--pico-del-color);">{{ err }}</li>
-    {% endfor %}
-</ul>
-{% endif %}
+    <table>
+        <tbody>
+            <tr>
+                <td style="font-weight: 600; color: var(--ds-text-subtle); width: 160px;">Imported</td>
+                <td>{{ result.imported }}</td>
+            </tr>
+            <tr>
+                <td style="font-weight: 600; color: var(--ds-text-subtle);">Updated</td>
+                <td>{{ result.updated }}</td>
+            </tr>
+            <tr>
+                <td style="font-weight: 600; color: var(--ds-text-subtle);">Projects Created</td>
+                <td>
+                    {% if result.projects_created %}
+                        {% for p in result.projects_created %}
+                        <a href="/project/{{ p }}">{{ p }}</a>{% if not loop.last %}, {% endif %}
+                        {% endfor %}
+                    {% else %}
+                    <span style="color: var(--ds-text-subtlest);">None</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td style="font-weight: 600; color: var(--ds-text-subtle);">Users Created</td>
+                <td>
+                    {% if result.users_created %}
+                        {{ result.users_created | join(', ') }}
+                    {% else %}
+                    <span style="color: var(--ds-text-subtlest);">None</span>
+                    {% endif %}
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    {% if result.errors %}
+    <h3 class="section-heading">Errors</h3>
+    <ul style="list-style: none;">
+        {% for err in result.errors %}
+        <li style="padding: var(--ds-space-075) 0; border-bottom: 1px solid var(--ds-border); color: #AE2E24;">{{ err }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>
 {% endif %}
 {% endblock %}

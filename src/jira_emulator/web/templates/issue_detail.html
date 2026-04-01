@@ -3,142 +3,199 @@
 {% block title %}{{ issue.key }}: {{ issue.fields.summary | default('') }} - Jira Emulator{% endblock %}
 
 {% block content %}
-<h1>{{ issue.key }}: {{ issue.fields.summary | default('') }}</h1>
+<div class="breadcrumb">
+    {% if issue.fields.project %}
+    <a href="/project/{{ issue.fields.project.key }}">{{ issue.fields.project.key }}</a> /
+    {% endif %}
+    {{ issue.key }}
+</div>
 
 {% if issue.fields.parent %}
-<p>
-    <strong>Parent:</strong>
-    <a href="/issue/{{ issue.fields.parent.key }}">{{ issue.fields.parent.key }}</a>
+<div class="breadcrumb">
+    Parent: <a href="/issue/{{ issue.fields.parent.key }}">{{ issue.fields.parent.key }}</a>
     &mdash; {{ issue.fields.parent.fields.summary | default('') }}
-</p>
+</div>
 {% endif %}
 
-<div class="detail-grid">
-    <!-- Left column: description and comments -->
-    <div>
-        <h3>Description</h3>
-        {% if issue.fields.description %}
-        <pre style="white-space: pre-wrap; word-wrap: break-word; background: var(--pico-card-background-color); padding: 1rem; border-radius: 8px;">{{ issue.fields.description }}</pre>
-        {% else %}
-        <p><em>No description provided.</em></p>
-        {% endif %}
+<div class="issue-header">
+    <div class="issue-summary">{{ issue.fields.summary | default('') }}</div>
+</div>
 
-        <h3>Comments</h3>
-        {% set comments = issue.fields.comment.comments if issue.fields.comment else [] %}
-        {% if comments %}
-            {% for c in comments %}
-            <article style="margin-bottom: 1rem;">
-                <header>
-                    <strong>{{ c.author.displayName | default('Unknown') if c.author else 'Unknown' }}</strong>
-                    <small style="margin-left: 0.5rem;">{{ c.created | default('') }}</small>
-                </header>
-                <p style="white-space: pre-wrap;">{{ c.body | default('') }}</p>
-            </article>
-            {% endfor %}
-        {% else %}
-        <p><em>No comments.</em></p>
-        {% endif %}
+<div class="detail-layout">
+    <!-- Left column: description, comments, links -->
+    <div>
+        <div class="card">
+            <h3 class="section-heading" style="margin-top: 0;">Description</h3>
+            {% if issue.fields.description %}
+            <div style="white-space: pre-wrap; word-wrap: break-word; line-height: 1.5;">{{ issue.fields.description }}</div>
+            {% else %}
+            <p style="color: var(--ds-text-subtlest); font-style: italic;">No description provided.</p>
+            {% endif %}
+        </div>
 
         <!-- Issue Links -->
         {% set links = issue.fields.issuelinks | default([]) %}
         {% if links %}
-        <h3>Issue Links</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>Relationship</th>
-                    <th>Issue</th>
-                    <th>Summary</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for link in links %}
-                <tr>
-                    {% if link.outwardIssue is defined and link.outwardIssue %}
-                    <td>{{ link.type.outward | default('') }}</td>
-                    <td><a href="/issue/{{ link.outwardIssue.key }}">{{ link.outwardIssue.key }}</a></td>
-                    <td>{{ link.outwardIssue.fields.summary | default('') }}</td>
-                    {% elif link.inwardIssue is defined and link.inwardIssue %}
-                    <td>{{ link.type.inward | default('') }}</td>
-                    <td><a href="/issue/{{ link.inwardIssue.key }}">{{ link.inwardIssue.key }}</a></td>
-                    <td>{{ link.inwardIssue.fields.summary | default('') }}</td>
-                    {% endif %}
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="card">
+            <h3 class="section-heading" style="margin-top: 0;">Linked Issues</h3>
+            <table class="link-table">
+                <thead>
+                    <tr>
+                        <th>Relationship</th>
+                        <th>Issue</th>
+                        <th>Summary</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for link in links %}
+                    <tr>
+                        {% if link.outwardIssue is defined and link.outwardIssue %}
+                        <td style="color: var(--ds-text-subtle);">{{ link.type.outward | default('') }}</td>
+                        <td><a class="issue-key-link" href="/issue/{{ link.outwardIssue.key }}">{{ link.outwardIssue.key }}</a></td>
+                        <td>{{ link.outwardIssue.fields.summary | default('') }}</td>
+                        {% elif link.inwardIssue is defined and link.inwardIssue %}
+                        <td style="color: var(--ds-text-subtle);">{{ link.type.inward | default('') }}</td>
+                        <td><a class="issue-key-link" href="/issue/{{ link.inwardIssue.key }}">{{ link.inwardIssue.key }}</a></td>
+                        <td>{{ link.inwardIssue.fields.summary | default('') }}</td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
         {% endif %}
+
+        <!-- Comments -->
+        <div class="card">
+            <h3 class="section-heading" style="margin-top: 0;">Activity</h3>
+            {% set comments = issue.fields.comment.comments if issue.fields.comment else [] %}
+            {% if comments %}
+            <div class="comment-list">
+                {% for c in comments %}
+                <div class="comment">
+                    <div class="comment-header">
+                        {% set author_name = c.author.displayName | default('Unknown') if c.author else 'Unknown' %}
+                        <div class="comment-avatar">{{ author_name[0] | upper }}</div>
+                        <span class="comment-author">{{ author_name }}</span>
+                        <span class="comment-date">{{ c.created | default('') }}</span>
+                    </div>
+                    <div class="comment-body">{{ c.body | default('') }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p style="color: var(--ds-text-subtlest); font-style: italic;">No comments yet.</p>
+            {% endif %}
+        </div>
     </div>
 
     <!-- Right column: metadata sidebar -->
     <div class="detail-sidebar">
-        <dl>
-            <dt>Status</dt>
-            <dd>
+        <div class="field-group">
+            <div class="field-label">Status</div>
+            <div class="field-value">
                 {% if issue.fields.status %}
                     {% set cat = issue.fields.status.statusCategory.key | default('new') %}
-                    <span class="badge {% if cat == 'done' %}badge-done{% elif cat == 'indeterminate' %}badge-progress{% else %}badge-new{% endif %}">
+                    <span class="lozenge {% if cat == 'done' %}lozenge-done{% elif cat == 'indeterminate' %}lozenge-inprogress{% else %}lozenge-new{% endif %}">
                         {{ issue.fields.status.name }}
                     </span>
                 {% else %}
-                &mdash;
+                <span class="empty">&mdash;</span>
                 {% endif %}
-            </dd>
+            </div>
+        </div>
 
-            <dt>Priority</dt>
-            <dd>{{ issue.fields.priority.name if issue.fields.priority else '&mdash;' }}</dd>
+        <div class="field-group">
+            <div class="field-label">Priority</div>
+            <div class="field-value">{{ issue.fields.priority.name if issue.fields.priority else '&mdash;' }}</div>
+        </div>
 
-            <dt>Type</dt>
-            <dd>{{ issue.fields.issuetype.name if issue.fields.issuetype else '&mdash;' }}</dd>
+        <div class="field-group">
+            <div class="field-label">Type</div>
+            <div class="field-value">{{ issue.fields.issuetype.name if issue.fields.issuetype else '&mdash;' }}</div>
+        </div>
 
-            <dt>Assignee</dt>
-            <dd>{{ issue.fields.assignee.displayName if issue.fields.assignee else 'Unassigned' }}</dd>
-
-            <dt>Reporter</dt>
-            <dd>{{ issue.fields.reporter.displayName if issue.fields.reporter else '&mdash;' }}</dd>
-
-            <dt>Created</dt>
-            <dd>{{ issue.fields.created | default('&mdash;') }}</dd>
-
-            <dt>Updated</dt>
-            <dd>{{ issue.fields.updated | default('&mdash;') }}</dd>
-
-            <dt>Resolution</dt>
-            <dd>{{ issue.fields.resolution.name if issue.fields.resolution else 'Unresolved' }}</dd>
-
-            <dt>Resolution Date</dt>
-            <dd>{{ issue.fields.resolutiondate | default('&mdash;') }}</dd>
-
-            <dt>Due Date</dt>
-            <dd>{{ issue.fields.duedate | default('&mdash;') }}</dd>
-
-            <dt>Labels</dt>
-            <dd>
-                {% if issue.fields.labels %}
-                    {{ issue.fields.labels | join(', ') }}
+        <div class="field-group">
+            <div class="field-label">Assignee</div>
+            <div class="field-value">
+                {% if issue.fields.assignee %}
+                {{ issue.fields.assignee.displayName }}
                 {% else %}
-                    &mdash;
+                <span class="empty">Unassigned</span>
                 {% endif %}
-            </dd>
+            </div>
+        </div>
 
-            <dt>Components</dt>
-            <dd>
+        <div class="field-group">
+            <div class="field-label">Reporter</div>
+            <div class="field-value">{{ issue.fields.reporter.displayName if issue.fields.reporter else '&mdash;' }}</div>
+        </div>
+
+        <div class="field-group">
+            <div class="field-label">Resolution</div>
+            <div class="field-value">
+                {% if issue.fields.resolution %}
+                {{ issue.fields.resolution.name }}
+                {% else %}
+                <span class="empty">Unresolved</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="field-group">
+            <div class="field-label">Labels</div>
+            <div class="field-value">
+                {% if issue.fields.labels %}
+                    {% for l in issue.fields.labels %}
+                    <span class="label-chip">{{ l }}</span>
+                    {% endfor %}
+                {% else %}
+                <span class="empty">None</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="field-group">
+            <div class="field-label">Components</div>
+            <div class="field-value">
                 {% if issue.fields.components %}
                     {{ issue.fields.components | map(attribute='name') | join(', ') }}
                 {% else %}
-                    &mdash;
+                <span class="empty">None</span>
                 {% endif %}
-            </dd>
+            </div>
+        </div>
 
-            <dt>Fix Versions</dt>
-            <dd>
+        <div class="field-group">
+            <div class="field-label">Fix Versions</div>
+            <div class="field-value">
                 {% if issue.fields.fixVersions %}
                     {{ issue.fields.fixVersions | map(attribute='name') | join(', ') }}
                 {% else %}
-                    &mdash;
+                <span class="empty">None</span>
                 {% endif %}
-            </dd>
-        </dl>
+            </div>
+        </div>
+
+        <div class="field-group">
+            <div class="field-label">Created</div>
+            <div class="field-value" style="color: var(--ds-text-subtlest);">{{ issue.fields.created | default('&mdash;') }}</div>
+        </div>
+
+        <div class="field-group">
+            <div class="field-label">Updated</div>
+            <div class="field-value" style="color: var(--ds-text-subtlest);">{{ issue.fields.updated | default('&mdash;') }}</div>
+        </div>
+
+        <div class="field-group">
+            <div class="field-label">Due Date</div>
+            <div class="field-value" style="color: var(--ds-text-subtlest);">{{ issue.fields.duedate | default('&mdash;') }}</div>
+        </div>
+
+        <div class="field-group">
+            <div class="field-label">Resolution Date</div>
+            <div class="field-value" style="color: var(--ds-text-subtlest);">{{ issue.fields.resolutiondate | default('&mdash;') }}</div>
+        </div>
     </div>
 </div>
 {% endblock %}

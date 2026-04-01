@@ -3,56 +3,64 @@
 {% block title %}{{ project.name }} - Jira Emulator{% endblock %}
 
 {% block content %}
-<h1>{{ project.name }}</h1>
-<p><strong>Key:</strong> {{ project.key }} &mdash; <strong>Total Issues:</strong> {{ total_issues }}</p>
-<p><a href="/issues?project={{ project.key }}">View all issues</a></p>
+<div class="breadcrumb">
+    <a href="/">Projects</a> / {{ project.key }}
+</div>
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
-    <div>
-        <h3>Status Breakdown</h3>
+<h1>{{ project.name }}</h1>
+<p style="color: var(--ds-text-subtle); margin-bottom: var(--ds-space-300);">
+    {{ project.key }} &mdash; {{ total_issues }} issue{{ 's' if total_issues != 1 else '' }}
+    &mdash; <a href="/issues?project={{ project.key }}">View all issues</a>
+</p>
+
+<div class="grid-2col">
+    <div class="card">
+        <h3>By Status</h3>
         {% if status_counts %}
         <table>
             <thead>
                 <tr>
                     <th>Status</th>
-                    <th>Count</th>
+                    <th style="text-align: right;">Count</th>
                 </tr>
             </thead>
             <tbody>
                 {% for sc in status_counts %}
                 <tr>
-                    <td>{{ sc.name }}</td>
-                    <td>{{ sc.count }}</td>
+                    <td>
+                        <a href="/issues?project={{ project.key }}&status={{ sc.name }}">{{ sc.name }}</a>
+                    </td>
+                    <td style="text-align: right;">{{ sc.count }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
         {% else %}
-        <p>No issues yet.</p>
+        <div class="empty-state"><p>No issues yet.</p></div>
         {% endif %}
     </div>
 
-    <div>
-        <h3>Issue Type Breakdown</h3>
+    <div class="card">
+        <h3>By Type</h3>
         {% if type_counts %}
         <table>
             <thead>
                 <tr>
                     <th>Type</th>
-                    <th>Count</th>
+                    <th style="text-align: right;">Count</th>
                 </tr>
             </thead>
             <tbody>
                 {% for tc in type_counts %}
                 <tr>
                     <td>{{ tc.name }}</td>
-                    <td>{{ tc.count }}</td>
+                    <td style="text-align: right;">{{ tc.count }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
         {% else %}
-        <p>No issues yet.</p>
+        <div class="empty-state"><p>No issues yet.</p></div>
         {% endif %}
     </div>
 </div>
