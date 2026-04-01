@@ -518,6 +518,104 @@
             background: #FFECEB;
             border: 1px solid #FFD5D2;
         }
+
+        /* Create button in nav */
+        .btn-create {
+            margin-left: auto;
+            height: 32px;
+            padding: 0 var(--ds-space-150);
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            border-radius: var(--ds-radius);
+            background: rgba(255,255,255,0.2);
+            color: #fff;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-create:hover { background: rgba(255,255,255,0.32); }
+
+        /* Modal overlay */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 200;
+            background: rgba(8, 15, 33, 0.48);
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 80px;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal {
+            background: var(--ds-surface);
+            border-radius: 8px;
+            box-shadow: 0px 8px 12px rgba(30, 31, 33, 0.15), 0px 0px 1px rgba(30, 31, 33, 0.31);
+            width: 640px;
+            max-width: 90vw;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: var(--ds-space-200) var(--ds-space-300);
+            border-bottom: 1px solid var(--ds-border);
+        }
+        .modal-header h2 { margin: 0; font-size: 20px; }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 22px;
+            color: var(--ds-text-subtle);
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: var(--ds-radius);
+            line-height: 1;
+        }
+        .modal-close:hover { background: var(--ds-background-neutral); }
+        .modal-body {
+            padding: var(--ds-space-300);
+            overflow-y: auto;
+        }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: var(--ds-space-100);
+            padding: var(--ds-space-200) var(--ds-space-300);
+            border-top: 1px solid var(--ds-border);
+        }
+        .modal-body .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--ds-space-200);
+        }
+        .modal-body textarea {
+            width: 100%;
+            min-height: 100px;
+            font-family: inherit;
+            font-size: 14px;
+            color: var(--ds-text);
+            background: var(--ds-background-input);
+            border: 1px solid var(--ds-border-input);
+            border-radius: var(--ds-radius);
+            padding: var(--ds-space-100);
+            resize: vertical;
+        }
+        .modal-body textarea:focus {
+            outline: none;
+            border-color: var(--ds-border-focused);
+            box-shadow: 0 0 0 1px var(--ds-border-focused);
+        }
+        .modal-body select, .modal-body input[type="text"] { width: 100%; }
+        .modal-error {
+            color: #AE2E24;
+            font-size: 13px;
+            margin-top: var(--ds-space-050);
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -531,6 +629,7 @@
             <li><a href="/issues" {% if '/issues' in request.url.path %}class="active"{% endif %}>Issues</a></li>
             <li><a href="/admin/import" {% if '/admin' in request.url.path %}class="active"{% endif %}>Import</a></li>
         </ul>
+        <button class="btn-create" onclick="openCreateModal()">+ Create</button>
     </nav>
     <div class="page-container">
         {% block content %}{% endblock %}
@@ -538,5 +637,110 @@
     <footer class="page-footer">
         Jira Emulator v{{ version | default('0.1.0') }}
     </footer>
+
+    <!-- Create Issue Modal -->
+    <div class="modal-overlay" id="createModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Create Issue</h2>
+                <button class="modal-close" onclick="closeCreateModal()">&times;</button>
+            </div>
+            <form method="post" action="/issue/create" id="createForm">
+                <div class="modal-body">
+                    <div class="form-row">
+                        <div class="form-field">
+                            <label for="cf-project">Project *</label>
+                            <select name="project" id="cf-project" required>
+                                <option value="">Select project...</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label for="cf-issuetype">Issue Type *</label>
+                            <select name="issuetype" id="cf-issuetype" required>
+                                <option value="">Select type...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-field">
+                        <label for="cf-summary">Summary *</label>
+                        <input type="text" name="summary" id="cf-summary" required placeholder="Enter a summary...">
+                    </div>
+                    <div class="form-field">
+                        <label for="cf-description">Description</label>
+                        <textarea name="description" id="cf-description" placeholder="Describe the issue..."></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-field">
+                            <label for="cf-priority">Priority</label>
+                            <select name="priority" id="cf-priority">
+                                <option value="">None</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label for="cf-assignee">Assignee</label>
+                            <select name="assignee" id="cf-assignee">
+                                <option value="">Unassigned</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-field">
+                        <label for="cf-labels">Labels</label>
+                        <input type="text" name="labels" id="cf-labels" placeholder="Comma-separated, e.g. bug, frontend">
+                    </div>
+                    <div class="modal-error" id="createError"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" onclick="closeCreateModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="createSubmitBtn">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+    let metadataLoaded = false;
+
+    function openCreateModal() {
+        document.getElementById('createModal').classList.add('open');
+        if (!metadataLoaded) {
+            fetch('/api/web/create-metadata')
+                .then(r => r.json())
+                .then(data => {
+                    populateSelect('cf-project', data.projects, 'key', d => d.key + ' - ' + d.name);
+                    populateSelect('cf-issuetype', data.issueTypes, 'name', d => d.name);
+                    populateSelect('cf-priority', data.priorities, 'name', d => d.name);
+                    populateSelect('cf-assignee', data.users, 'name', d => d.displayName);
+                    metadataLoaded = true;
+                });
+        }
+    }
+
+    function closeCreateModal() {
+        document.getElementById('createModal').classList.remove('open');
+    }
+
+    function populateSelect(id, items, valueKey, labelFn) {
+        const sel = document.getElementById(id);
+        const first = sel.options[0];
+        sel.innerHTML = '';
+        sel.appendChild(first);
+        items.forEach(item => {
+            const opt = document.createElement('option');
+            opt.value = item[valueKey];
+            opt.textContent = labelFn(item);
+            sel.appendChild(opt);
+        });
+    }
+
+    // Close modal on overlay click
+    document.getElementById('createModal').addEventListener('click', function(e) {
+        if (e.target === this) closeCreateModal();
+    });
+
+    // Close modal on Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeCreateModal();
+    });
+    </script>
 </body>
 </html>

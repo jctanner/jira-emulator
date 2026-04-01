@@ -1,11 +1,11 @@
-"""Web UI routes for the Jira Emulator — read-only HTML views."""
+"""Web UI routes for the Jira Emulator."""
 
 import json
 import logging
 import math
 
-from fastapi import APIRouter, Depends, Request, UploadFile, File
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, Request, UploadFile, File
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +17,9 @@ from jira_emulator.models.project import Project
 from jira_emulator.models.user import User
 from jira_emulator.models.status import Status
 from jira_emulator.models.issue_type import IssueType
+from jira_emulator.models.priority import Priority
 from jira_emulator.services import issue_service, search_service
+from jira_emulator.services.user_service import get_or_create_user
 
 logger = logging.getLogger(__name__)
 
@@ -228,11 +230,33 @@ async def issue_detail(request: Request, key: str, db: AsyncSession = Depends(ge
     base_url = str(request.base_url).rstrip("/")
     formatted = await issue_service.format_issue_response(issue, base_url, db)
 
+    # Load metadata for the edit modal
+    all_projects = (
+        (await db.execute(select(Project).order_by(Project.key))).scalars().all()
+    )
+    all_types = (
+        (await db.execute(select(IssueType).order_by(IssueType.name))).scalars().all()
+    )
+    all_priorities = (
+        (await db.execute(select(Priority).order_by(Priority.id))).scalars().all()
+    )
+    all_statuses = (
+        (await db.execute(select(Status).order_by(Status.name))).scalars().all()
+    )
+    all_users = (
+        (await db.execute(select(User).where(User.active.is_(True)).order_by(User.display_name))).scalars().all()
+    )
+
     return templates.TemplateResponse(
         request=request,
         name="issue_detail.html",
         context={
             "issue": formatted,
+            "projects": all_projects,
+            "issue_types": all_types,
+            "priorities": all_priorities,
+            "statuses": all_statuses,
+            "users": all_users,
             "version": __version__,
         },
     )
@@ -323,4 +347,130 @@ async def admin_import_upload(
                 },
                 "version": __version__,
             },
+        )
+
+
+# ---------------------------------------------------------------------------
+# GET /api/web/create-metadata — JSON for the create-issue modal
+# ---------------------------------------------------------------------------
+@router.get("/api/web/create-metadata")
+async def create_metadata(db: AsyncSession = Depends(get_db)):
+    """Return projects, issue types, priorities, and users for the create form."""
+    projects = (
+        (await db.execute(select(Project).order_by(Project.key))).scalars().all()
+    )
+    issue_types = (
+        (await db.execute(select(IssueType).order_by(IssueType.name))).scalars().all()
+    )
+    priorities = (
+        (await db.execute(select(Priority).order_by(Priority.id))).scalars().all()
+    )
+    users = (
+        (await db.execute(select(User).where(User.active.is_(True)).order_by(User.display_name))).scalars().all()
+    )
+    return JSONResponse({
+        "projects": [{"key": p.key, "name": p.name} for p in projects],
+        "issueTypes": [{"name": t.name} for t in issue_types],
+        "priorities": [{"name": p.name} for p in priorities],
+        "users": [{"name": u.username, "displayName": u.display_name} for u in users],
+    })
+
+
+# ---------------------------------------------------------------------------
+# POST /issue/create — Create issue from web form
+# ---------------------------------------------------------------------------
+@router.post("/issue/create")
+async def create_issue_web(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    project: str = Form(...),
+    issuetype: str = Form(...),
+    summary: str = Form(...),
+    description: str = Form(""),
+    priority: str = Form(""),
+    assignee: str = Form(""),
+    labels: str = Form(""),
+):
+    """Create an issue from the web modal form and redirect to it."""
+    # Build fields dict matching what issue_service.create_issue expects
+    fields: dict = {
+        "project": {"key": project},
+        "issuetype": {"name": issuetype},
+        "summary": summary,
+    }
+    if description:
+        fields["description"] = description
+    if priority:
+        fields["priority"] = {"name": priority}
+    if assignee:
+        fields["assignee"] = {"name": assignee}
+    if labels:
+        fields["labels"] = [l.strip() for l in labels.split(",") if l.strip()]
+
+    # Use the admin user as the reporter/current_user
+    admin = await get_or_create_user(db, "admin", "admin")
+
+    try:
+        issue = await issue_service.create_issue(db, fields, admin)
+        await db.commit()
+        return RedirectResponse(url=f"/issue/{issue.key}", status_code=303)
+    except ValueError as exc:
+        logger.warning("Create issue failed: %s", exc)
+        return HTMLResponse(
+            f"<h1>Error creating issue</h1><p>{exc}</p><p><a href='/issues'>Back to issues</a></p>",
+            status_code=400,
+        )
+
+
+# ---------------------------------------------------------------------------
+# POST /issue/{key}/edit — Update issue from web form
+# ---------------------------------------------------------------------------
+@router.post("/issue/{key}/edit")
+async def edit_issue_web(
+    key: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    summary: str = Form(...),
+    description: str = Form(""),
+    priority: str = Form(""),
+    assignee: str = Form(""),
+    status: str = Form(""),
+    labels: str = Form(""),
+):
+    """Update an issue from the edit modal and redirect back to it."""
+    fields: dict = {
+        "summary": summary,
+        "description": description,
+        "labels": [l.strip() for l in labels.split(",") if l.strip()] if labels else [],
+    }
+    if priority:
+        fields["priority"] = {"name": priority}
+    else:
+        fields["priority"] = None
+    if assignee:
+        fields["assignee"] = {"name": assignee}
+    else:
+        fields["assignee"] = None
+
+    try:
+        await issue_service.update_issue(db, key, fields=fields)
+
+        # Handle status change via transition if requested
+        if status:
+            issue = await issue_service.get_issue(db, key)
+            if issue and issue.status and issue.status.name != status:
+                from jira_emulator.services import workflow_service
+                transitions = await workflow_service.get_available_transitions(db, issue)
+                for t in transitions:
+                    if t.to_status.name == status:
+                        await workflow_service.execute_transition(db, issue, t.id)
+                        break
+
+        await db.commit()
+        return RedirectResponse(url=f"/issue/{key}", status_code=303)
+    except ValueError as exc:
+        logger.warning("Edit issue failed: %s", exc)
+        return HTMLResponse(
+            f"<h1>Error updating issue</h1><p>{exc}</p><p><a href='/issue/{key}'>Back to issue</a></p>",
+            status_code=400,
         )

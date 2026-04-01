@@ -17,8 +17,9 @@
 </div>
 {% endif %}
 
-<div class="issue-header">
+<div class="issue-header" style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-200);">
     <div class="issue-summary">{{ issue.fields.summary | default('') }}</div>
+    <button class="btn btn-default" onclick="openEditModal()" style="flex-shrink: 0;">Edit</button>
 </div>
 
 <div class="detail-layout">
@@ -198,4 +199,79 @@
         </div>
     </div>
 </div>
+
+<!-- Edit Issue Modal -->
+<div class="modal-overlay" id="editModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Edit {{ issue.key }}</h2>
+            <button class="modal-close" onclick="closeEditModal()">&times;</button>
+        </div>
+        <form method="post" action="/issue/{{ issue.key }}/edit">
+            <div class="modal-body">
+                <div class="form-field">
+                    <label for="ef-summary">Summary *</label>
+                    <input type="text" name="summary" id="ef-summary" required value="{{ issue.fields.summary | default('') }}">
+                </div>
+                <div class="form-field">
+                    <label for="ef-description">Description</label>
+                    <textarea name="description" id="ef-description">{{ issue.fields.description | default('') }}</textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-field">
+                        <label for="ef-status">Status</label>
+                        <select name="status" id="ef-status">
+                            {% for s in statuses %}
+                            <option value="{{ s.name }}" {% if issue.fields.status and issue.fields.status.name == s.name %}selected{% endif %}>{{ s.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="ef-priority">Priority</label>
+                        <select name="priority" id="ef-priority">
+                            <option value="">None</option>
+                            {% for p in priorities %}
+                            <option value="{{ p.name }}" {% if issue.fields.priority and issue.fields.priority.name == p.name %}selected{% endif %}>{{ p.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-field">
+                        <label for="ef-assignee">Assignee</label>
+                        <select name="assignee" id="ef-assignee">
+                            <option value="">Unassigned</option>
+                            {% for u in users %}
+                            <option value="{{ u.username }}" {% if issue.fields.assignee and issue.fields.assignee.name == u.username %}selected{% endif %}>{{ u.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="ef-labels">Labels</label>
+                        <input type="text" name="labels" id="ef-labels" value="{{ issue.fields.labels | join(', ') if issue.fields.labels else '' }}" placeholder="Comma-separated">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" onclick="closeEditModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openEditModal() {
+    document.getElementById('editModal').classList.add('open');
+}
+function closeEditModal() {
+    document.getElementById('editModal').classList.remove('open');
+}
+document.getElementById('editModal').addEventListener('click', function(e) {
+    if (e.target === this) closeEditModal();
+});
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeEditModal();
+});
+</script>
 {% endblock %}
