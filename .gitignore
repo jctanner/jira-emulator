@@ -32,5 +32,9 @@ Thumbs.db
 .coverage
 htmlcov/
 
+# Data/scratch
+tickets/
+tmp/
+
 # Claude
 .claude/
