@@ -28,7 +28,7 @@
         <div class="card">
             <h3 class="section-heading" style="margin-top: 0;">Description</h3>
             {% if issue.fields.description %}
-            <div style="white-space: pre-wrap; word-wrap: break-word; line-height: 1.5;">{{ issue.fields.description }}</div>
+            <div class="markdown-body" data-markdown>{{ issue.fields.description }}</div>
             {% else %}
             <p style="color: var(--ds-text-subtlest); font-style: italic;">No description provided.</p>
             {% endif %}
@@ -130,7 +130,7 @@
                             <span class="comment-author">{{ author_name }}</span>
                             <span class="comment-date">{{ c.created | default('') }}</span>
                         </div>
-                        <div class="comment-body">{{ c.body | default('') }}</div>
+                        <div class="comment-body markdown-body" data-markdown>{{ c.body | default('') }}</div>
                     </div>
                     {% endfor %}
                 </div>
