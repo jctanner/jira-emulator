@@ -455,16 +455,15 @@ async def edit_issue_web(
     try:
         await issue_service.update_issue(db, key, fields=fields)
 
-        # Handle status change via transition if requested
+        # Handle status change directly (bypass workflow for web UI flexibility)
         if status:
             issue = await issue_service.get_issue(db, key)
             if issue and issue.status and issue.status.name != status:
-                from jira_emulator.services import workflow_service
-                transitions = await workflow_service.get_available_transitions(db, issue)
-                for t in transitions:
-                    if t.to_status.name == status:
-                        await workflow_service.execute_transition(db, issue, t.id)
-                        break
+                result = await db.execute(select(Status).where(Status.name == status))
+                new_status = result.scalar_one_or_none()
+                if new_status:
+                    issue.status_id = new_status.id
+                    issue.status = new_status
 
         await db.commit()
         return RedirectResponse(url=f"/issue/{key}", status_code=303)
