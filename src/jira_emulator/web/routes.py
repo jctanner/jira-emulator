@@ -280,6 +280,24 @@ async def admin_import_form(request: Request):
 # ---------------------------------------------------------------------------
 # POST /admin/import — Handle import upload
 # ---------------------------------------------------------------------------
+@router.post("/admin/reset")
+async def admin_reset(request: Request):
+    """Reset the database to seed data only and redirect to home."""
+    from jira_emulator.database import Base, get_engine, get_session_factory
+    from jira_emulator.services.seed_service import load_seed_data
+
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+
+    factory = get_session_factory()
+    async with factory() as session:
+        await load_seed_data(session)
+
+    return RedirectResponse(url="/", status_code=303)
+
+
 @router.post("/admin/import", response_class=HTMLResponse)
 async def admin_import_upload(
     request: Request,

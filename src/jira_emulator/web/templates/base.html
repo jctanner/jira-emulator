@@ -627,7 +627,7 @@
         <ul class="topnav-links">
             <li><a href="/" {% if request.url.path == '/' %}class="active"{% endif %}>Dashboard</a></li>
             <li><a href="/issues" {% if '/issues' in request.url.path %}class="active"{% endif %}>Issues</a></li>
-            <li><a href="/admin/import" {% if '/admin' in request.url.path %}class="active"{% endif %}>Import</a></li>
+            <li><a href="/admin/import" {% if '/admin' in request.url.path %}class="active"{% endif %}>Admin</a></li>
         </ul>
         <button class="btn-create" onclick="openCreateModal()">+ Create</button>
     </nav>

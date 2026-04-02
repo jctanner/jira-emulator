@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Import - Jira Emulator{% endblock %}
+{% block title %}Admin - Jira Emulator{% endblock %}
 
 {% block content %}
-<h1>Import Issues</h1>
+<h1>Administration</h1>
 
 <div class="card">
+    <h2>Import Issues</h2>
     <p style="color: var(--ds-text-subtle); margin-bottom: var(--ds-space-200);">
         Upload a JSON file containing an array of issue objects (or a single issue object) to import into the emulator.
     </p>
@@ -16,6 +17,16 @@
             <input type="file" name="file" accept=".json" required>
         </div>
         <button type="submit" class="btn btn-primary">Import</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Reset Database</h2>
+    <p style="color: var(--ds-text-subtle); margin-bottom: var(--ds-space-200);">
+        Drop all data and restore the database to its initial seed state (default projects, statuses, workflows, and admin user).
+    </p>
+    <form method="post" action="/admin/reset" onsubmit="return confirm('Are you sure you want to reset the database? All issues and imported data will be permanently deleted.');">
+        <button type="submit" class="btn" style="background: #AE2E24; color: #fff;">Reset Database</button>
     </form>
 </div>
 
