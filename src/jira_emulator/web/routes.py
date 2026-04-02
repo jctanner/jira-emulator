@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from jira_emulator import __version__
 from jira_emulator.database import get_db
+from jira_emulator.models.comment import Comment
 from jira_emulator.models.issue import Issue
 from jira_emulator.models.project import Project
 from jira_emulator.models.user import User
@@ -501,3 +502,43 @@ async def edit_issue_web(
             f"<h1>Error updating issue</h1><p>{exc}</p><p><a href='/issue/{key}'>Back to issue</a></p>",
             status_code=400,
         )
+
+
+# ---------------------------------------------------------------------------
+# POST /issue/{key}/comment — Add comment from web UI
+# ---------------------------------------------------------------------------
+@router.post("/issue/{key}/comment")
+async def add_comment_web(
+    key: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    body: str = Form(...),
+):
+    """Add a comment to an issue from the web UI and redirect back."""
+    from datetime import datetime
+
+    issue = await issue_service.get_issue(db, key)
+    if issue is None:
+        return HTMLResponse("<h1>Issue not found</h1>", status_code=404)
+
+    admin = await get_or_create_user(db, "admin", "admin")
+
+    now = datetime.utcnow()
+    comment = Comment(
+        issue_id=issue.id,
+        author_id=admin.id,
+        body=body,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(comment)
+    await db.flush()
+
+    await history_service.record_change(
+        db, issue.id, admin.id, "Comment",
+        None, None, body, str(comment.id),
+    )
+
+    await db.commit()
+
+    return RedirectResponse(url=f"/issue/{key}", status_code=303)

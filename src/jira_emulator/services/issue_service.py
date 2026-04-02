@@ -740,7 +740,13 @@ async def _apply_update_ops(
             if "add" in op:
                 comment_data = op["add"]
                 body = comment_data.get("body", "") if isinstance(comment_data, dict) else str(comment_data)
-                db.add(Comment(issue_id=issue.id, body=body))
+                comment = Comment(issue_id=issue.id, body=body, author_id=author_id)
+                db.add(comment)
+                await db.flush()
+                await history_service.record_change(
+                    db, issue.id, author_id, "Comment",
+                    None, None, body, str(comment.id),
+                )
 
 
 # ---------------------------------------------------------------------------

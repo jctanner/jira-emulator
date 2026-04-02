@@ -18,7 +18,7 @@ from jira_emulator.schemas.issue import (
     TransitionRequest,
     UpdateIssueRequest,
 )
-from jira_emulator.services import issue_service
+from jira_emulator.services import issue_service, history_service
 from jira_emulator.services.user_service import get_or_create_user
 
 router = APIRouter(prefix="/rest/api/2")
@@ -258,6 +258,11 @@ async def add_comment(
     )
     db.add(comment)
     await db.flush()
+
+    await history_service.record_change(
+        db, issue.id, author.id, "Comment",
+        None, None, comment.body, str(comment.id),
+    )
 
     return {
         "self": f"{base_url}/rest/api/2/issue/{issue.id}/comment/{comment.id}",
