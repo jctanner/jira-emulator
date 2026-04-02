@@ -605,3 +605,48 @@ async def upload_attachment_web(
 
     await db.commit()
     return RedirectResponse(url=f"/issue/{key}", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# POST /issue/{key}/attachment/{attachment_id}/delete — Delete attachment from web UI
+# ---------------------------------------------------------------------------
+@router.post("/issue/{key}/attachment/{attachment_id}/delete")
+async def delete_attachment_web(
+    key: str,
+    attachment_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete an attachment from the web UI and redirect back to the issue."""
+    from sqlalchemy import select as sa_select
+
+    issue = await issue_service.get_issue(db, key)
+    if issue is None:
+        return HTMLResponse("<h1>Issue not found</h1>", status_code=404)
+
+    result = await db.execute(
+        sa_select(Attachment).where(
+            Attachment.id == attachment_id,
+            Attachment.issue_id == issue.id,
+        )
+    )
+    att = result.scalar_one_or_none()
+    if att is None:
+        return HTMLResponse("<h1>Attachment not found</h1>", status_code=404)
+
+    admin = await get_or_create_user(db, "admin", "admin")
+
+    await history_service.record_change(
+        db, issue.id, admin.id, "Attachment",
+        att.filename, str(att.id), None, None,
+    )
+
+    settings = get_settings()
+    disk_path = os.path.join(settings.ATTACHMENT_DIR, att.file_path)
+    if os.path.exists(disk_path):
+        os.remove(disk_path)
+
+    await db.delete(att)
+    await db.commit()
+
+    return RedirectResponse(url=f"/issue/{key}", status_code=303)
