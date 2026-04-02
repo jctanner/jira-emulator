@@ -19,6 +19,7 @@ dependencies = [
     "pyyaml>=6.0",
     "bcrypt>=4.1",
     "python-multipart>=0.0.7",
+    "mcp>=1.2.0",
 ]
 
 [project.optional-dependencies]
