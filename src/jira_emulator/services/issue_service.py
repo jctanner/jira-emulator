@@ -83,9 +83,9 @@ def _issue_load_options():
         selectinload(Issue.custom_field_values).selectinload(IssueCustomFieldValue.custom_field),
         selectinload(Issue.watchers).selectinload(Watcher.user),
         selectinload(Issue.outward_links).selectinload(IssueLink.link_type),
-        selectinload(Issue.outward_links).selectinload(IssueLink.outward_issue),
+        selectinload(Issue.outward_links).selectinload(IssueLink.inward_issue),
         selectinload(Issue.inward_links).selectinload(IssueLink.link_type),
-        selectinload(Issue.inward_links).selectinload(IssueLink.inward_issue),
+        selectinload(Issue.inward_links).selectinload(IssueLink.outward_issue),
     ]
 
 
@@ -804,6 +804,10 @@ async def format_issue_response(
 
     # -- issue links --
     issuelinks: list[dict] = []
+    # outward_links: links where this issue is the outward side.
+    # Show the OTHER issue (inward_issue) as outwardIssue in the response,
+    # matching Jira's convention where the linked issue shown is always the
+    # other end, not the current issue.
     for ol in issue.outward_links:
         issuelinks.append({
             "id": str(ol.id),
@@ -816,14 +820,16 @@ async def format_issue_response(
                 "self": f"{base_url}/rest/api/2/issueLinkType/{ol.link_type.id}",
             },
             "outwardIssue": {
-                "id": str(ol.outward_issue.id),
-                "key": ol.outward_issue.key,
-                "self": f"{base_url}/rest/api/2/issue/{ol.outward_issue.id}",
+                "id": str(ol.inward_issue.id),
+                "key": ol.inward_issue.key,
+                "self": f"{base_url}/rest/api/2/issue/{ol.inward_issue.id}",
                 "fields": {
-                    "summary": ol.outward_issue.summary,
+                    "summary": ol.inward_issue.summary,
                 },
             },
         })
+    # inward_links: links where this issue is the inward side.
+    # Show the OTHER issue (outward_issue) as inwardIssue in the response.
     for il in issue.inward_links:
         issuelinks.append({
             "id": str(il.id),
@@ -836,11 +842,11 @@ async def format_issue_response(
                 "self": f"{base_url}/rest/api/2/issueLinkType/{il.link_type.id}",
             },
             "inwardIssue": {
-                "id": str(il.inward_issue.id),
-                "key": il.inward_issue.key,
-                "self": f"{base_url}/rest/api/2/issue/{il.inward_issue.id}",
+                "id": str(il.outward_issue.id),
+                "key": il.outward_issue.key,
+                "self": f"{base_url}/rest/api/2/issue/{il.outward_issue.id}",
                 "fields": {
-                    "summary": il.inward_issue.summary,
+                    "summary": il.outward_issue.summary,
                 },
             },
         })
