@@ -21,7 +21,9 @@ from jira_emulator.models.comment import Comment
 from jira_emulator.models.link import IssueLink, IssueLinkType
 from jira_emulator.models.watcher import Watcher
 from jira_emulator.models.workflow import Workflow, WorkflowTransition
+from jira_emulator.models.issue_history import IssueHistory
 from jira_emulator.services import user_service
+from jira_emulator.services import history_service
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +88,7 @@ def _issue_load_options():
         selectinload(Issue.outward_links).selectinload(IssueLink.inward_issue),
         selectinload(Issue.inward_links).selectinload(IssueLink.link_type),
         selectinload(Issue.inward_links).selectinload(IssueLink.outward_issue),
+        selectinload(Issue.history_entries).selectinload(IssueHistory.author),
     ]
 
 
@@ -353,11 +356,13 @@ async def update_issue(
     issue_id_or_key: str,
     fields: dict | None = None,
     update_ops: dict | None = None,
+    author_id: int | None = None,
 ) -> Issue:
     """Update an existing issue.
 
     *fields* is a dict of field-name -> new-value (full replacement).
     *update_ops* follows the Jira ``update`` payload semantics (add/remove/set).
+    *author_id* is the user id to attribute changes to in the changelog.
 
     Raises ``ValueError`` if the issue is not found.
     """
@@ -366,27 +371,43 @@ async def update_issue(
         raise ValueError(f"Issue '{issue_id_or_key}' not found")
 
     if fields:
-        await _apply_field_updates(db, issue, fields)
+        await _apply_field_updates(db, issue, fields, author_id=author_id)
 
     if update_ops:
-        await _apply_update_ops(db, issue, update_ops)
+        await _apply_update_ops(db, issue, update_ops, author_id=author_id)
 
     issue.updated_at = datetime.utcnow()
     await db.flush()
     return issue
 
 
-async def _apply_field_updates(db: AsyncSession, issue: Issue, fields: dict) -> None:
+async def _apply_field_updates(
+    db: AsyncSession, issue: Issue, fields: dict, *, author_id: int | None = None,
+) -> None:
     """Apply simple field-level updates to *issue*."""
 
     if "summary" in fields:
-        issue.summary = fields["summary"]
+        old = issue.summary
+        new = fields["summary"]
+        if old != new:
+            issue.summary = new
+            await history_service.record_change(
+                db, issue.id, author_id, "summary", old, None, new, None,
+            )
 
     if "description" in fields:
-        issue.description = fields["description"]
+        old = issue.description
+        new = fields["description"]
+        if old != new:
+            issue.description = new
+            await history_service.record_change(
+                db, issue.id, author_id, "description", old, None, new, None,
+            )
 
     # priority
     if "priority" in fields:
+        old_name = issue.priority.name if issue.priority else None
+        old_id = str(issue.priority_id) if issue.priority_id else None
         priority_data = fields["priority"]
         if priority_data and priority_data.get("name"):
             result = await db.execute(
@@ -395,11 +416,23 @@ async def _apply_field_updates(db: AsyncSession, issue: Issue, fields: dict) -> 
             priority = result.scalar_one_or_none()
             if priority:
                 issue.priority_id = priority.id
+                if old_name != priority.name:
+                    await history_service.record_change(
+                        db, issue.id, author_id, "priority",
+                        old_name, old_id, priority.name, str(priority.id),
+                    )
         else:
             issue.priority_id = None
+            if old_name is not None:
+                await history_service.record_change(
+                    db, issue.id, author_id, "priority",
+                    old_name, old_id, None, None,
+                )
 
     # assignee
     if "assignee" in fields:
+        old_name = issue.assignee.display_name if issue.assignee else None
+        old_id = issue.assignee.username if issue.assignee else None
         assignee_data = fields["assignee"]
         if assignee_data and assignee_data.get("name"):
             assignee = await user_service.get_or_create_user(
@@ -408,11 +441,23 @@ async def _apply_field_updates(db: AsyncSession, issue: Issue, fields: dict) -> 
                 username=assignee_data["name"],
             )
             issue.assignee_id = assignee.id
+            if old_id != assignee.username:
+                await history_service.record_change(
+                    db, issue.id, author_id, "assignee",
+                    old_name, old_id, assignee.display_name, assignee.username,
+                )
         else:
             issue.assignee_id = None
+            if old_id is not None:
+                await history_service.record_change(
+                    db, issue.id, author_id, "assignee",
+                    old_name, old_id, None, None,
+                )
 
     # reporter
     if "reporter" in fields:
+        old_name = issue.reporter.display_name if issue.reporter else None
+        old_id = issue.reporter.username if issue.reporter else None
         reporter_data = fields["reporter"]
         if reporter_data and reporter_data.get("name"):
             reporter = await user_service.get_or_create_user(
@@ -421,9 +466,16 @@ async def _apply_field_updates(db: AsyncSession, issue: Issue, fields: dict) -> 
                 username=reporter_data["name"],
             )
             issue.reporter_id = reporter.id
+            if old_id != reporter.username:
+                await history_service.record_change(
+                    db, issue.id, author_id, "reporter",
+                    old_name, old_id, reporter.display_name, reporter.username,
+                )
 
     # resolution
     if "resolution" in fields:
+        old_name = issue.resolution.name if issue.resolution else None
+        old_id = str(issue.resolution_id) if issue.resolution_id else None
         resolution_data = fields["resolution"]
         if resolution_data and resolution_data.get("name"):
             result = await db.execute(
@@ -433,18 +485,36 @@ async def _apply_field_updates(db: AsyncSession, issue: Issue, fields: dict) -> 
             if resolution:
                 issue.resolution_id = resolution.id
                 issue.resolved_at = datetime.utcnow()
+                if old_name != resolution.name:
+                    await history_service.record_change(
+                        db, issue.id, author_id, "resolution",
+                        old_name, old_id, resolution.name, str(resolution.id),
+                    )
         else:
             issue.resolution_id = None
             issue.resolved_at = None
+            if old_name is not None:
+                await history_service.record_change(
+                    db, issue.id, author_id, "resolution",
+                    old_name, old_id, None, None,
+                )
 
     # labels (full replacement)
     if "labels" in fields:
+        old_labels = sorted(lbl.label for lbl in issue.labels)
+        new_labels = sorted(fields["labels"])
         # Delete existing labels
         for lbl in list(issue.labels):
             await db.delete(lbl)
         await db.flush()
         for label_text in fields["labels"]:
             db.add(Label(issue_id=issue.id, label=label_text))
+        if old_labels != new_labels:
+            await history_service.record_change(
+                db, issue.id, author_id, "labels",
+                " ".join(old_labels) if old_labels else None, None,
+                " ".join(new_labels) if new_labels else None, None,
+            )
 
     # components (full replacement)
     if "components" in fields:
@@ -559,11 +629,14 @@ async def _apply_field_updates(db: AsyncSession, issue: Issue, fields: dict) -> 
                 cfv.value_string = str(field_value)
 
 
-async def _apply_update_ops(db: AsyncSession, issue: Issue, update_ops: dict) -> None:
+async def _apply_update_ops(
+    db: AsyncSession, issue: Issue, update_ops: dict, *, author_id: int | None = None,
+) -> None:
     """Apply Jira ``update``-style operations (add/remove/set)."""
 
     # labels
     if "labels" in update_ops:
+        old_labels = sorted(lbl.label for lbl in issue.labels)
         for op in update_ops["labels"]:
             if "add" in op:
                 db.add(Label(issue_id=issue.id, label=op["add"]))
@@ -577,6 +650,18 @@ async def _apply_update_ops(db: AsyncSession, issue: Issue, update_ops: dict) ->
                 await db.flush()
                 for label_text in op["set"]:
                     db.add(Label(issue_id=issue.id, label=label_text))
+        await db.flush()
+        # Re-query to get current labels after ops
+        result = await db.execute(
+            select(Label).where(Label.issue_id == issue.id)
+        )
+        new_labels = sorted(lbl.label for lbl in result.scalars().all())
+        if old_labels != new_labels:
+            await history_service.record_change(
+                db, issue.id, author_id, "labels",
+                " ".join(old_labels) if old_labels else None, None,
+                " ".join(new_labels) if new_labels else None, None,
+            )
 
     # components
     if "components" in update_ops:
@@ -972,10 +1057,50 @@ async def format_issue_response(
                     filtered[f] = all_fields[f]
             all_fields = filtered
 
+    # -- changelog --
+    changelog_histories: list[dict] = []
+    history_entries = issue.history_entries if hasattr(issue, "history_entries") else []
+    if history_entries:
+        # Group entries by (author_id, created_at rounded to same second)
+        from itertools import groupby
+
+        def _group_key(entry: IssueHistory) -> tuple:
+            ts = entry.created_at.replace(microsecond=0) if entry.created_at else None
+            return (entry.author_id, ts)
+
+        sorted_entries = sorted(history_entries, key=lambda e: (e.created_at, e.id))
+        for group_key, group_iter in groupby(sorted_entries, key=_group_key):
+            items_in_group = list(group_iter)
+            first = items_in_group[0]
+            changelog_histories.append({
+                "id": str(first.id),
+                "author": _format_user(first.author, base_url),
+                "created": _format_datetime(first.created_at),
+                "items": [
+                    {
+                        "field": entry.field,
+                        "fieldtype": entry.field_type,
+                        "from": entry.from_id,
+                        "fromString": entry.from_value,
+                        "to": entry.to_id,
+                        "toString": entry.to_value,
+                    }
+                    for entry in items_in_group
+                ],
+            })
+
+    changelog = {
+        "startAt": 0,
+        "maxResults": len(changelog_histories),
+        "total": len(changelog_histories),
+        "histories": changelog_histories,
+    }
+
     return {
         "expand": "renderedFields,names,schema,operations,editmeta,changelog",
         "id": str(issue.id),
         "self": f"{base_url}/rest/api/2/issue/{issue.id}",
         "key": issue.key,
         "fields": all_fields,
+        "changelog": changelog,
     }

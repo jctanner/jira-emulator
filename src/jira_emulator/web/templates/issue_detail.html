@@ -66,27 +66,74 @@
         </div>
         {% endif %}
 
-        <!-- Comments -->
+        <!-- Activity: Comments & History Tabs -->
         <div class="card">
             <h3 class="section-heading" style="margin-top: 0;">Activity</h3>
-            {% set comments = issue.fields.comment.comments if issue.fields.comment else [] %}
-            {% if comments %}
-            <div class="comment-list">
-                {% for c in comments %}
-                <div class="comment">
-                    <div class="comment-header">
-                        {% set author_name = c.author.displayName | default('Unknown') if c.author else 'Unknown' %}
-                        <div class="comment-avatar">{{ author_name[0] | upper }}</div>
-                        <span class="comment-author">{{ author_name }}</span>
-                        <span class="comment-date">{{ c.created | default('') }}</span>
-                    </div>
-                    <div class="comment-body">{{ c.body | default('') }}</div>
-                </div>
-                {% endfor %}
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="comments-tab" onclick="switchTab(this, 'comments-tab')">Comments</button>
+                <button class="tab-btn" data-tab="history-tab" onclick="switchTab(this, 'history-tab')">History</button>
             </div>
-            {% else %}
-            <p style="color: var(--ds-text-subtlest); font-style: italic;">No comments yet.</p>
-            {% endif %}
+
+            <!-- Comments Tab -->
+            <div class="tab-panel active" id="comments-tab">
+                {% set comments = issue.fields.comment.comments if issue.fields.comment else [] %}
+                {% if comments %}
+                <div class="comment-list">
+                    {% for c in comments %}
+                    <div class="comment">
+                        <div class="comment-header">
+                            {% set author_name = c.author.displayName | default('Unknown') if c.author else 'Unknown' %}
+                            <div class="comment-avatar">{{ author_name[0] | upper }}</div>
+                            <span class="comment-author">{{ author_name }}</span>
+                            <span class="comment-date">{{ c.created | default('') }}</span>
+                        </div>
+                        <div class="comment-body">{{ c.body | default('') }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p style="color: var(--ds-text-subtlest); font-style: italic;">No comments yet.</p>
+                {% endif %}
+            </div>
+
+            <!-- History Tab -->
+            <div class="tab-panel" id="history-tab">
+                {% set histories = issue.changelog.histories if issue.changelog else [] %}
+                {% if histories %}
+                <div class="history-list">
+                    {% for h in histories %}
+                    <div class="history-entry">
+                        <div class="comment-header">
+                            {% set author_name = h.author.displayName | default('Unknown') if h.author else 'System' %}
+                            <div class="comment-avatar">{{ author_name[0] | upper }}</div>
+                            <span class="comment-author">{{ author_name }}</span>
+                            <span class="comment-date">{{ h.created | default('') }}</span>
+                        </div>
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Field</th>
+                                    <th>From</th>
+                                    <th>To</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in h.items %}
+                                <tr>
+                                    <td style="font-weight: 500; text-transform: capitalize;">{{ item.field }}</td>
+                                    <td style="color: var(--ds-text-subtle);">{{ item.fromString | default('') }}</td>
+                                    <td>{{ item.toString | default('') }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p style="color: var(--ds-text-subtlest); font-style: italic;">No changes recorded.</p>
+                {% endif %}
+            </div>
         </div>
     </div>
 
@@ -260,7 +307,73 @@
     </div>
 </div>
 
+<style>
+.tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--ds-border, #DDDEE1);
+    margin-bottom: var(--ds-space-200, 16px);
+}
+.tab-btn {
+    padding: 8px 16px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ds-text-subtle, #505258);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color 0.15s, border-color 0.15s;
+}
+.tab-btn:hover {
+    color: var(--ds-text, #292A2E);
+}
+.tab-btn.active {
+    color: var(--ds-link, #1868DB);
+    border-bottom-color: var(--ds-link, #1868DB);
+}
+.tab-panel {
+    display: none;
+}
+.tab-panel.active {
+    display: block;
+}
+.history-entry {
+    padding: var(--ds-space-150, 12px) 0;
+    border-bottom: 1px solid var(--ds-border, #DDDEE1);
+}
+.history-entry:last-child {
+    border-bottom: none;
+}
+.history-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-size: 13px;
+}
+.history-table th,
+.history-table td {
+    padding: 4px 8px;
+    text-align: left;
+    border: 1px solid var(--ds-border, #DDDEE1);
+}
+.history-table th {
+    background: var(--ds-surface-sunken, #F8F8F8);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    color: var(--ds-text-subtlest, #6B6E76);
+}
+</style>
+
 <script>
+function switchTab(btn, tabId) {
+    btn.closest('.card').querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.closest('.card').querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+    btn.classList.add('active');
+    document.getElementById(tabId).classList.add('active');
+}
 function openEditModal() {
     document.getElementById('editModal').classList.add('open');
 }

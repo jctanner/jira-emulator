@@ -18,7 +18,7 @@ from jira_emulator.models.user import User
 from jira_emulator.models.status import Status
 from jira_emulator.models.issue_type import IssueType
 from jira_emulator.models.priority import Priority
-from jira_emulator.services import issue_service, search_service
+from jira_emulator.services import issue_service, search_service, history_service
 from jira_emulator.services.user_service import get_or_create_user
 
 logger = logging.getLogger(__name__)
@@ -471,17 +471,27 @@ async def edit_issue_web(
         fields["assignee"] = None
 
     try:
-        await issue_service.update_issue(db, key, fields=fields)
+        # Use the admin user as the author for web edits
+        admin = await get_or_create_user(db, "admin", "admin")
+
+        await issue_service.update_issue(db, key, fields=fields, author_id=admin.id)
 
         # Handle status change directly (bypass workflow for web UI flexibility)
         if status:
             issue = await issue_service.get_issue(db, key)
             if issue and issue.status and issue.status.name != status:
+                old_status_name = issue.status.name
+                old_status_id = str(issue.status_id)
                 result = await db.execute(select(Status).where(Status.name == status))
                 new_status = result.scalar_one_or_none()
                 if new_status:
                     issue.status_id = new_status.id
                     issue.status = new_status
+                    await history_service.record_change(
+                        db, issue.id, admin.id, "status",
+                        old_status_name, old_status_id,
+                        new_status.name, str(new_status.id),
+                    )
 
         await db.commit()
         return RedirectResponse(url=f"/issue/{key}", status_code=303)

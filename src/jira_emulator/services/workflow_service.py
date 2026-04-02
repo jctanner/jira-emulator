@@ -94,7 +94,8 @@ async def get_available_transitions(
 # ---------------------------------------------------------------------------
 
 async def execute_transition(
-    db: AsyncSession, issue: Issue, transition_id: int
+    db: AsyncSession, issue: Issue, transition_id: int,
+    author_id: int | None = None,
 ) -> None:
     """Execute a workflow transition on *issue*.
 
@@ -110,6 +111,8 @@ async def execute_transition(
       - ``resolution_id`` and ``resolved_at`` are cleared.
     * ``updated_at`` is refreshed.
     """
+
+    from jira_emulator.services import history_service
 
     workflow = await get_workflow_for_issue(db, issue)
     if workflow is None:
@@ -138,11 +141,24 @@ async def execute_transition(
 
     now = datetime.utcnow()
 
+    # Capture old values for history
+    old_status_name = issue.status.name if issue.status else None
+    old_status_id = str(issue.status_id) if issue.status_id else None
+    old_resolution_name = issue.resolution.name if issue.resolution else None
+    old_resolution_id = str(issue.resolution_id) if issue.resolution_id else None
+
     # Update status
     issue.status_id = transition.to_status_id
 
-    # Handle resolution based on target status category
+    # Record status change
     target_status = transition.to_status
+    await history_service.record_change(
+        db, issue.id, author_id, "status",
+        old_status_name, old_status_id,
+        target_status.name, str(target_status.id),
+    )
+
+    # Handle resolution based on target status category
     if target_status.category == "done":
         # Auto-resolve: look up the "Done" resolution
         res_result = await db.execute(
@@ -151,10 +167,21 @@ async def execute_transition(
         done_resolution = res_result.scalar_one_or_none()
         if done_resolution is not None:
             issue.resolution_id = done_resolution.id
+            if old_resolution_name != done_resolution.name:
+                await history_service.record_change(
+                    db, issue.id, author_id, "resolution",
+                    old_resolution_name, old_resolution_id,
+                    done_resolution.name, str(done_resolution.id),
+                )
         issue.resolved_at = now
     else:
         # Moving away from done — clear resolution
         issue.resolution_id = None
         issue.resolved_at = None
+        if old_resolution_name is not None:
+            await history_service.record_change(
+                db, issue.id, author_id, "resolution",
+                old_resolution_name, old_resolution_id, None, None,
+            )
 
     issue.updated_at = now

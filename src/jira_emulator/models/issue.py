@@ -81,6 +81,9 @@ class Issue(Base):
         foreign_keys="IssueLink.inward_issue_id", cascade="all, delete-orphan",
         overlaps="inward_issue"
     )
+    history_entries: Mapped[list["IssueHistory"]] = relationship(
+        back_populates="issue", cascade="all, delete-orphan"
+    )
 
 
 class IssueSequence(Base):
@@ -109,3 +112,4 @@ from jira_emulator.models.custom_field import IssueCustomFieldValue  # noqa: E40
 from jira_emulator.models.watcher import Watcher  # noqa: E402, F401
 from jira_emulator.models.sprint import IssueSprint  # noqa: E402, F401
 from jira_emulator.models.link import IssueLink  # noqa: E402, F401
+from jira_emulator.models.issue_history import IssueHistory  # noqa: E402, F401
