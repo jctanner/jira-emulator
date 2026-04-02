@@ -650,3 +650,48 @@ async def delete_attachment_web(
     await db.commit()
 
     return RedirectResponse(url=f"/issue/{key}", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# GET /attachment/{attachment_id}/view — View text attachment inline
+# ---------------------------------------------------------------------------
+@router.get("/attachment/{attachment_id}/view", response_class=HTMLResponse)
+async def view_attachment_web(
+    attachment_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Serve a text-based attachment inline for viewing in the browser."""
+    from fastapi.responses import FileResponse
+
+    result = await db.execute(
+        select(Attachment).where(Attachment.id == attachment_id)
+    )
+    att = result.scalar_one_or_none()
+    if att is None:
+        return HTMLResponse("<h1>Attachment not found</h1>", status_code=404)
+
+    settings = get_settings()
+    disk_path = os.path.join(settings.ATTACHMENT_DIR, att.file_path)
+    if not os.path.exists(disk_path):
+        return HTMLResponse("<h1>Attachment file missing from disk</h1>", status_code=404)
+
+    if att.filename.endswith('.md'):
+        with open(disk_path, "r", errors="replace") as f:
+            content = f.read()
+        return templates.TemplateResponse(
+            request=request,
+            name="attachment_markdown.html",
+            context={
+                "filename": att.filename,
+                "content": content,
+                "version": __version__,
+            },
+        )
+
+    return FileResponse(
+        path=disk_path,
+        media_type=att.mime_type,
+        filename=att.filename,
+        headers={"Content-Disposition": f'inline; filename="{att.filename}"'},
+    )

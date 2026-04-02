@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}{{ filename }} - Jira Emulator{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="/">Home</a> / Attachment
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--ds-space-200);">
+    <h1 style="margin-bottom: 0;">{{ filename }}</h1>
+    <button class="btn btn-default" id="toggleRawBtn" onclick="toggleRaw()">View Raw</button>
+</div>
+<div class="card">
+    <div class="markdown-body" data-markdown id="renderedView">{{ content }}</div>
+    <pre id="rawView" style="display:none; white-space:pre-wrap; word-wrap:break-word; margin:0; font-size:13px; font-family:ui-monospace, Menlo, 'Segoe UI Mono', monospace;">{{ content }}</pre>
+</div>
+<script>
+function toggleRaw() {
+    var rendered = document.getElementById('renderedView');
+    var raw = document.getElementById('rawView');
+    var btn = document.getElementById('toggleRawBtn');
+    if (raw.style.display === 'none') {
+        raw.style.display = 'block';
+        rendered.style.display = 'none';
+        btn.textContent = 'View Rendered';
+    } else {
+        raw.style.display = 'none';
+        rendered.style.display = 'block';
+        btn.textContent = 'View Raw';
+    }
+}
+</script>
+{% endblock %}

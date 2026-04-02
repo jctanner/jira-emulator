@@ -88,8 +88,11 @@
                         <td>{% if att.size >= 1048576 %}{{ "%.1f"|format(att.size / 1048576) }} MB{% elif att.size >= 1024 %}{{ "%.1f"|format(att.size / 1024) }} KB{% else %}{{ att.size }} B{% endif %}</td>
                         <td>{{ att.author.displayName if att.author else '—' }}</td>
                         <td style="color: var(--ds-text-subtlest);">{{ att.created | default('') }}</td>
-                        <td>
-                            <form method="post" action="/issue/{{ issue.key }}/attachment/{{ att.id }}/delete" style="margin:0;" onsubmit="return confirm('Delete {{ att.filename }}?');">
+                        <td style="white-space: nowrap;">
+                            {% if att.mimeType and att.mimeType.startswith('text/') or att.mimeType in ['application/json', 'application/xml', 'application/javascript', 'application/x-yaml', 'application/yaml', 'application/x-sh', 'application/x-python'] %}
+                            <a href="/attachment/{{ att.id }}/view" target="_blank" class="btn btn-default" style="padding: 2px 8px; font-size: 12px; margin-right: 4px;">View</a>
+                            {% endif %}
+                            <form method="post" action="/issue/{{ issue.key }}/attachment/{{ att.id }}/delete" style="margin:0; display:inline;" onsubmit="return confirm('Delete {{ att.filename }}?');">
                                 <button type="submit" class="btn btn-default" style="padding: 2px 8px; font-size: 12px; color: var(--ds-text-danger, #c9372c);">Delete</button>
                             </form>
                         </td>
