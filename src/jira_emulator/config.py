@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     SEED_DATA: bool = True
     ADMIN_PASSWORD: str = "admin"
+    ATTACHMENT_DIR: str = "data/attachments"
 
     model_config = {"env_prefix": "", "case_sensitive": True}
 

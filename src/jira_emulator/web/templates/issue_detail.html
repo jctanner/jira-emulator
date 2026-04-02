@@ -66,6 +66,43 @@
         </div>
         {% endif %}
 
+        <!-- Attachments -->
+        <div class="card">
+            <h3 class="section-heading" style="margin-top: 0;">Attachments</h3>
+            {% set attachments = issue.fields.attachment | default([]) %}
+            {% if attachments %}
+            <table class="link-table">
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Size</th>
+                        <th>Author</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for att in attachments %}
+                    <tr>
+                        <td><a href="{{ att.content }}">{{ att.filename }}</a></td>
+                        <td>{% if att.size >= 1048576 %}{{ "%.1f"|format(att.size / 1048576) }} MB{% elif att.size >= 1024 %}{{ "%.1f"|format(att.size / 1024) }} KB{% else %}{{ att.size }} B{% endif %}</td>
+                        <td>{{ att.author.displayName if att.author else '—' }}</td>
+                        <td style="color: var(--ds-text-subtlest);">{{ att.created | default('') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="color: var(--ds-text-subtlest); font-style: italic;">No attachments.</p>
+            {% endif %}
+
+            <form method="post" action="/issue/{{ issue.key }}/attachment" enctype="multipart/form-data" class="upload-attachment-form">
+                <div style="display: flex; align-items: center; gap: 8px; margin-top: 12px;">
+                    <input type="file" name="file" multiple>
+                    <button type="submit" class="btn btn-default">Upload</button>
+                </div>
+            </form>
+        </div>
+
         <!-- Activity: Comments & History Tabs -->
         <div class="card">
             <h3 class="section-heading" style="margin-top: 0;">Activity</h3>

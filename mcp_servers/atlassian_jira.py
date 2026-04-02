@@ -201,6 +201,112 @@ def transitionJiraIssue(
 
 
 # ---------------------------------------------------------------------------
+# Multipart upload helper
+# ---------------------------------------------------------------------------
+
+def _multipart_request(method: str, path: str, filename: str, file_bytes: bytes, content_type: str = "application/octet-stream") -> dict | str:
+    """Make a multipart/form-data request for file upload."""
+    boundary = "----JiraMCPBoundary9876543210"
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        f"Content-Type: {content_type}\r\n"
+        f"\r\n"
+    ).encode("utf-8") + file_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+    url = f"{JIRA_SERVER}{path}"
+    req = urllib.request.Request(
+        url,
+        data=body,
+        method=method,
+        headers={
+            "Authorization": _AUTH_HEADER,
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Accept": "application/json",
+            "X-Atlassian-Token": "no-check",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req) as resp:
+            resp_body = resp.read().decode("utf-8")
+            if not resp_body:
+                return {"status": resp.status, "message": "Success"}
+            return json.loads(resp_body)
+    except urllib.error.HTTPError as exc:
+        error_body = ""
+        try:
+            error_body = exc.read().decode("utf-8")
+        except Exception:
+            pass
+        return {
+            "error": True,
+            "status": exc.code,
+            "message": exc.reason,
+            "body": error_body,
+        }
+    except urllib.error.URLError as exc:
+        return {
+            "error": True,
+            "status": 0,
+            "message": f"Connection error: {exc.reason}",
+        }
+
+
+# ---------------------------------------------------------------------------
+# Attachment tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def addAttachmentToJiraIssue(issueIdOrKey: str, filename: str, fileContent: str) -> dict:
+    """Add a file attachment to a Jira issue.
+
+    The fileContent parameter must be base64-encoded file data.
+    Returns the attachment metadata array from the server.
+    """
+    try:
+        file_bytes = base64.b64decode(fileContent)
+    except Exception as exc:
+        return {"error": True, "message": f"Invalid base64 content: {exc}"}
+
+    import mimetypes
+    content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+    return _multipart_request(
+        "POST",
+        f"/rest/api/2/issue/{issueIdOrKey}/attachments",
+        filename,
+        file_bytes,
+        content_type,
+    )
+
+
+@mcp.tool()
+def getJiraIssueAttachments(issueIdOrKey: str) -> dict:
+    """Get the list of attachments on a Jira issue.
+
+    Returns the attachment array from the issue's fields.
+    """
+    result = _request("GET", f"/rest/api/2/issue/{issueIdOrKey}?fields=attachment")
+    if isinstance(result, dict) and not result.get("error"):
+        return result.get("fields", {}).get("attachment", [])
+    return result
+
+
+@mcp.tool()
+def deleteJiraAttachment(attachmentId: str) -> dict:
+    """Delete a Jira attachment by its ID.
+
+    Returns success status or error details.
+    """
+    result = _request("DELETE", f"/rest/api/2/attachment/{attachmentId}")
+    if isinstance(result, dict) and result.get("error"):
+        return result
+    return {"status": 204, "message": f"Attachment {attachmentId} deleted successfully"}
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 

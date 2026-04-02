@@ -3,6 +3,7 @@
 import json
 import logging
 import math
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -12,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from jira_emulator import __version__
 from jira_emulator.database import get_db
+from jira_emulator.config import get_settings
+from jira_emulator.models.attachment import Attachment
 from jira_emulator.models.comment import Comment
 from jira_emulator.models.issue import Issue
 from jira_emulator.models.project import Project
@@ -541,4 +544,64 @@ async def add_comment_web(
 
     await db.commit()
 
+    return RedirectResponse(url=f"/issue/{key}", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# POST /issue/{key}/attachment — Upload attachment from web UI
+# ---------------------------------------------------------------------------
+@router.post("/issue/{key}/attachment")
+async def upload_attachment_web(
+    key: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload file attachments from the web UI and redirect back to the issue."""
+    import mimetypes as mt
+
+    issue = await issue_service.get_issue(db, key)
+    if issue is None:
+        return HTMLResponse("<h1>Issue not found</h1>", status_code=404)
+
+    admin = await get_or_create_user(db, "admin", "admin")
+
+    settings = get_settings()
+    attachment_dir = settings.ATTACHMENT_DIR
+    os.makedirs(attachment_dir, exist_ok=True)
+
+    form = await request.form()
+    files = form.getlist("file")
+
+    now = datetime.utcnow()
+    for upload in files:
+        content = await upload.read()
+        filename = upload.filename or "unnamed"
+        mime = upload.content_type or mt.guess_type(filename)[0] or "application/octet-stream"
+        size = len(content)
+
+        attachment = Attachment(
+            issue_id=issue.id,
+            author_id=admin.id,
+            filename=filename,
+            size=size,
+            mime_type=mime,
+            file_path="",
+            created_at=now,
+        )
+        db.add(attachment)
+        await db.flush()
+
+        disk_filename = f"{attachment.id}_{filename}"
+        disk_path = os.path.join(attachment_dir, disk_filename)
+        attachment.file_path = disk_filename
+
+        with open(disk_path, "wb") as f:
+            f.write(content)
+
+        await history_service.record_change(
+            db, issue.id, admin.id, "Attachment",
+            None, None, filename, str(attachment.id),
+        )
+
+    await db.commit()
     return RedirectResponse(url=f"/issue/{key}", status_code=303)

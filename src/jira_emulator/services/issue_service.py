@@ -21,6 +21,7 @@ from jira_emulator.models.comment import Comment
 from jira_emulator.models.link import IssueLink, IssueLinkType
 from jira_emulator.models.watcher import Watcher
 from jira_emulator.models.workflow import Workflow, WorkflowTransition
+from jira_emulator.models.attachment import Attachment
 from jira_emulator.models.issue_history import IssueHistory
 from jira_emulator.services import user_service
 from jira_emulator.services import history_service
@@ -50,6 +51,30 @@ def _format_user(user: User | None, base_url: str) -> dict | None:
         "active": user.active,
         "timeZone": "UTC",
     }
+
+
+_IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml", "image/bmp", "image/tiff"}
+
+
+def _format_attachments(issue: "Issue", base_url: str) -> list[dict]:
+    """Format the attachments list for an issue response."""
+    result = []
+    for att in issue.attachments:
+        is_image = att.mime_type in _IMAGE_MIME_TYPES
+        entry = {
+            "self": f"{base_url}/rest/api/2/attachment/{att.id}",
+            "id": str(att.id),
+            "filename": att.filename,
+            "author": _format_user(att.author, base_url),
+            "created": _format_datetime(att.created_at),
+            "size": att.size,
+            "mimeType": att.mime_type,
+            "content": f"{base_url}/rest/api/2/attachment/content/{att.id}",
+        }
+        if is_image:
+            entry["thumbnail"] = f"{base_url}/rest/api/2/attachment/thumbnail/{att.id}"
+        result.append(entry)
+    return result
 
 
 def _status_category_for(category: str) -> dict:
@@ -89,6 +114,7 @@ def _issue_load_options():
         selectinload(Issue.inward_links).selectinload(IssueLink.link_type),
         selectinload(Issue.inward_links).selectinload(IssueLink.outward_issue),
         selectinload(Issue.history_entries).selectinload(IssueHistory.author),
+        selectinload(Issue.attachments).selectinload(Attachment.author),
     ]
 
 
@@ -1020,7 +1046,7 @@ async def format_issue_response(
             "isWatching": False,
         },
         "subtasks": [],
-        "attachment": [],
+        "attachment": _format_attachments(issue, base_url),
         "worklog": {"startAt": 0, "maxResults": 20, "total": 0, "worklogs": []},
         "timetracking": {},
         "environment": None,

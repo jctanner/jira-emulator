@@ -18,3 +18,4 @@ from jira_emulator.models.watcher import Watcher  # noqa: F401
 from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue  # noqa: F401
 from jira_emulator.models.sprint import Sprint, IssueSprint  # noqa: F401
 from jira_emulator.models.issue_history import IssueHistory  # noqa: F401
+from jira_emulator.models.attachment import Attachment  # noqa: F401

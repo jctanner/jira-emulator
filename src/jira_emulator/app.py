@@ -129,6 +129,7 @@ def create_app() -> FastAPI:
     # Register routers
     from jira_emulator.routers import (
         admin,
+        attachments,
         auth,
         fields,
         issues,
@@ -141,6 +142,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(auth.router)
+    app.include_router(attachments.router)
     app.include_router(issues.router)
     app.include_router(search.router)
     app.include_router(projects.router)
