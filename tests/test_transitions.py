@@ -157,6 +157,45 @@ async def test_reopen_from_done(client):
 
 
 @pytest.mark.asyncio
+async def test_reopen_from_closed_via_v3(client):
+    """Reopen works identically through the v3 API path."""
+    issue = await _create_issue(client)
+    key = issue["key"]
+
+    # Close via v3
+    resp = await client.get(f"/rest/api/3/issue/{key}/transitions", headers=AUTH)
+    assert resp.status_code == 200
+    transitions = resp.json()["transitions"]
+    close_t = next(t for t in transitions if t["to"]["name"] == "Closed")
+    resp = await client.post(f"/rest/api/3/issue/{key}/transitions", json={
+        "transition": {"id": close_t["id"]}
+    }, headers=AUTH)
+    assert resp.status_code == 204
+
+    # Verify closed via v3
+    resp = await client.get(f"/rest/api/3/issue/{key}", headers=AUTH)
+    assert resp.status_code == 200
+    data = resp.json()["fields"]
+    assert data["status"]["name"] == "Closed"
+    assert data["resolution"] is not None
+
+    # Reopen via v3
+    resp = await client.get(f"/rest/api/3/issue/{key}/transitions", headers=AUTH)
+    transitions = resp.json()["transitions"]
+    reopen_t = next(t for t in transitions if t["name"] == "Reopen")
+    resp = await client.post(f"/rest/api/3/issue/{key}/transitions", json={
+        "transition": {"id": reopen_t["id"]}
+    }, headers=AUTH)
+    assert resp.status_code == 204
+
+    # Verify reopened via v3 — description should be ADF, resolution cleared
+    resp = await client.get(f"/rest/api/3/issue/{key}", headers=AUTH)
+    data = resp.json()["fields"]
+    assert data["status"]["name"] == "In Progress"
+    assert data["resolution"] is None
+
+
+@pytest.mark.asyncio
 async def test_transition_has_correct_structure(client):
     """Transition response has id, name, to fields."""
     issue = await _create_issue(client)
