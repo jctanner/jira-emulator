@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -198,6 +198,20 @@ async def create_issue(
         seq = IssueSequence(project_id=project.id, next_number=1)
         db.add(seq)
         await db.flush()
+
+    # Ensure the sequence is ahead of any existing issues (e.g. from imports)
+    max_result = await db.execute(
+        select(func.max(Issue.key)).where(Issue.project_id == project.id)
+    )
+    max_key = max_result.scalar_one_or_none()
+    if max_key is not None:
+        # Extract the numeric suffix from keys like "RHAIRFE-1615"
+        try:
+            max_existing = int(max_key.rsplit("-", 1)[1])
+            if seq.next_number <= max_existing:
+                seq.next_number = max_existing + 1
+        except (ValueError, IndexError):
+            pass
 
     issue_number = seq.next_number
     seq.next_number = issue_number + 1
