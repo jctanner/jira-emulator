@@ -96,16 +96,22 @@ async def get_available_transitions(
 async def execute_transition(
     db: AsyncSession, issue: Issue, transition_id: int,
     author_id: int | None = None,
+    fields: dict | None = None,
 ) -> None:
     """Execute a workflow transition on *issue*.
 
     Raises ``ValueError`` if the transition is not valid for the issue's
     current workflow and status.
 
+    *fields* is an optional dict of field overrides from the transition
+    request body.  If ``fields`` contains a ``resolution`` key, the
+    specified resolution is used instead of the auto-default ``"Done"``.
+
     Side-effects on the issue:
     * ``status_id`` is set to the transition's ``to_status_id``.
     * If the target status category is ``"done"``:
-      - ``resolution_id`` is set to the ``Resolution`` named ``"Done"``.
+      - ``resolution_id`` is set to the resolution specified in *fields*,
+        or to ``"Done"`` if not provided.
       - ``resolved_at`` is set to the current time.
     * If the target status category is **not** ``"done"``:
       - ``resolution_id`` and ``resolved_at`` are cleared.
@@ -160,18 +166,32 @@ async def execute_transition(
 
     # Handle resolution based on target status category
     if target_status.category == "done":
-        # Auto-resolve: look up the "Done" resolution
+        # Determine resolution: use explicit override from fields, else "Done"
+        resolution_name = "Done"
+        if fields and "resolution" in fields:
+            res_data = fields["resolution"]
+            if isinstance(res_data, dict) and res_data.get("name"):
+                resolution_name = res_data["name"]
+
         res_result = await db.execute(
-            select(Resolution).where(Resolution.name == "Done")
+            select(Resolution).where(Resolution.name == resolution_name)
         )
-        done_resolution = res_result.scalar_one_or_none()
-        if done_resolution is not None:
-            issue.resolution_id = done_resolution.id
-            if old_resolution_name != done_resolution.name:
+        resolution = res_result.scalar_one_or_none()
+
+        # Fallback to "Done" if the requested resolution doesn't exist
+        if resolution is None and resolution_name != "Done":
+            res_result = await db.execute(
+                select(Resolution).where(Resolution.name == "Done")
+            )
+            resolution = res_result.scalar_one_or_none()
+
+        if resolution is not None:
+            issue.resolution_id = resolution.id
+            if old_resolution_name != resolution.name:
                 await history_service.record_change(
                     db, issue.id, author_id, "resolution",
                     old_resolution_name, old_resolution_id,
-                    done_resolution.name, str(done_resolution.id),
+                    resolution.name, str(resolution.id),
                 )
         issue.resolved_at = now
     else:

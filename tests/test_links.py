@@ -73,6 +73,25 @@ async def test_list_link_types(client):
     assert "Blocks" in names
 
 @pytest.mark.asyncio
+async def test_issue_split_link_type(client):
+    """POST /rest/api/2/issueLink with 'Issue split' type works."""
+    i1 = await _create_issue(client, summary="Parent RFE")
+    i2 = await _create_issue(client, summary="Child RFE")
+    resp = await client.post("/rest/api/2/issueLink", json={
+        "type": {"name": "Issue split"},
+        "inwardIssue": {"key": i1["key"]},
+        "outwardIssue": {"key": i2["key"]},
+    }, headers=AUTH)
+    assert resp.status_code == 201
+
+    # Verify link appears on the parent issue
+    resp = await client.get(f"/rest/api/2/issue/{i1['key']}", headers=AUTH)
+    links = resp.json()["fields"]["issuelinks"]
+    assert len(links) == 1
+    assert links[0]["type"]["name"] == "Issue split"
+
+
+@pytest.mark.asyncio
 async def test_create_link_invalid_type_returns_404(client):
     """POST /rest/api/2/issueLink with invalid link type returns 404."""
     i1 = await _create_issue(client, summary="Issue A")

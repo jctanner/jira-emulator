@@ -196,6 +196,50 @@ async def test_reopen_from_closed_via_v3(client):
 
 
 @pytest.mark.asyncio
+async def test_close_with_resolution_override(client):
+    """Transition to Closed with explicit resolution sets that resolution."""
+    issue = await _create_issue(client)
+    key = issue["key"]
+
+    # Find "Close" transition
+    resp = await client.get(f"/rest/api/2/issue/{key}/transitions", headers=AUTH)
+    transitions = resp.json()["transitions"]
+    close_t = next(t for t in transitions if t["to"]["name"] == "Closed")
+
+    # Close with resolution "Obsolete"
+    resp = await client.post(f"/rest/api/2/issue/{key}/transitions", json={
+        "transition": {"id": close_t["id"]},
+        "fields": {"resolution": {"name": "Obsolete"}},
+    }, headers=AUTH)
+    assert resp.status_code == 204
+
+    # Verify resolution is "Obsolete", not "Done"
+    resp = await client.get(f"/rest/api/2/issue/{key}", headers=AUTH)
+    data = resp.json()["fields"]
+    assert data["status"]["name"] == "Closed"
+    assert data["resolution"]["name"] == "Obsolete"
+
+
+@pytest.mark.asyncio
+async def test_close_without_resolution_defaults_to_done(client):
+    """Transition to Closed without explicit resolution defaults to Done."""
+    issue = await _create_issue(client)
+    key = issue["key"]
+
+    resp = await client.get(f"/rest/api/2/issue/{key}/transitions", headers=AUTH)
+    transitions = resp.json()["transitions"]
+    close_t = next(t for t in transitions if t["to"]["name"] == "Closed")
+
+    resp = await client.post(f"/rest/api/2/issue/{key}/transitions", json={
+        "transition": {"id": close_t["id"]},
+    }, headers=AUTH)
+    assert resp.status_code == 204
+
+    resp = await client.get(f"/rest/api/2/issue/{key}", headers=AUTH)
+    assert resp.json()["fields"]["resolution"]["name"] == "Done"
+
+
+@pytest.mark.asyncio
 async def test_transition_has_correct_structure(client):
     """Transition response has id, name, to fields."""
     issue = await _create_issue(client)

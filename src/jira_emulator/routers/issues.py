@@ -354,7 +354,11 @@ async def perform_transition(
 
     transition_id = int(body.transition.get("id", 0))
     try:
-        await workflow_service.execute_transition(db, issue, transition_id, author_id=current_user.id)
+        await workflow_service.execute_transition(
+            db, issue, transition_id,
+            author_id=current_user.id,
+            fields=body.fields,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=400,

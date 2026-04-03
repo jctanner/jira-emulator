@@ -53,17 +53,17 @@ async def test_list_statuses_returns_fourteen(client: httpx.AsyncClient):
         assert cat["key"] in {"new", "indeterminate", "done"}
 
 
-async def test_list_resolutions_returns_five(client: httpx.AsyncClient):
-    """GET /rest/api/2/resolution should return exactly 5 seeded resolutions."""
+async def test_list_resolutions(client: httpx.AsyncClient):
+    """GET /rest/api/2/resolution should return all seeded resolutions."""
     resp = await client.get("/rest/api/2/resolution", headers=AUTH_HEADER)
     assert resp.status_code == 200
 
     data = resp.json()
     assert isinstance(data, list)
-    assert len(data) == 5
+    assert len(data) == 6
 
     names = {r["name"] for r in data}
-    assert names == {"Done", "Won't Do", "Duplicate", "Cannot Reproduce", "Incomplete"}
+    assert names == {"Done", "Won't Do", "Duplicate", "Cannot Reproduce", "Incomplete", "Obsolete"}
 
 
 async def test_list_issue_types_returns_eight(client: httpx.AsyncClient):

@@ -85,12 +85,14 @@ RESOLUTIONS = [
     {"name": "Duplicate"},
     {"name": "Cannot Reproduce"},
     {"name": "Incomplete"},
+    {"name": "Obsolete"},
 ]
 
 LINK_TYPES = [
     {"name": "Blocks", "inward_description": "is blocked by", "outward_description": "blocks"},
     {"name": "Cloners", "inward_description": "is cloned by", "outward_description": "clones"},
     {"name": "Duplicate", "inward_description": "is duplicated by", "outward_description": "duplicates"},
+    {"name": "Issue split", "inward_description": "is split from", "outward_description": "split to"},
     {"name": "Relates", "inward_description": "relates to", "outward_description": "relates to"},
 ]
 
