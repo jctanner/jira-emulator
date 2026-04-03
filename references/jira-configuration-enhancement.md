@@ -1749,7 +1749,377 @@ async def export_full_config(db: Session = Depends(get_db)):
 
 ---
 
-## 5. Seed Data
+## 5. Configuration Exporter Tool
+
+### 5.1 Overview
+
+A standalone tool to export JIRA configuration from production instances and generate jira-emulator import JSON.
+
+**Purpose:**
+- Connect to production JIRA (Cloud or self-hosted)
+- Extract custom field definitions and metadata via REST APIs
+- Extract statuses and workflows
+- Generate JSON file compatible with `POST /api/admin/import/full-config`
+
+**Architecture:**
+
+```
+┌─────────────────┐
+│ Production JIRA │
+│  (Cloud/Server) │
+└────────┬────────┘
+         │
+         │ REST API calls (v2/v3)
+         │
+         ▼
+┌─────────────────┐
+│ Config Exporter │ ← Python CLI tool
+└────────┬────────┘
+         │
+         │ Generates JSON
+         │
+         ▼
+┌─────────────────┐
+│ jira-config.json│
+└────────┬────────┘
+         │
+         │ HTTP POST
+         │
+         ▼
+┌─────────────────┐
+│ jira-emulator   │
+│ Import Endpoint │
+└─────────────────┘
+```
+
+### 5.2 CLI Parameters
+
+```bash
+jira-config-export \
+  --url "https://company.atlassian.net" \
+  --token "YOUR_API_TOKEN" \
+  --project "PROJ" \
+  --output "jira-config.json"
+```
+
+**Parameters:**
+- `--url` - JIRA instance URL
+- `--token` - API token or PAT
+- `--user` - Username (for basic auth)
+- `--project` - Project key to export
+- `--output` - Output JSON file path (default: `jira-config.json`)
+- `--api-version` - Use `v2` or `v3` (auto-detect if not specified)
+
+### 5.3 Export Strategy
+
+**Step 1: Custom Fields**
+
+API Calls:
+- `GET /rest/api/{version}/field` - Get all fields
+- `GET /rest/api/2/issue/createmeta?projectKeys={project}&expand=projects.issuetypes.fields` - Get metadata
+
+Extract metadata:
+1. Call createmeta for each issue type
+2. Check if field appears in `fields` object
+3. If `required: true`, add to `required_for`
+4. If has `allowedValues`, extract to `allowed_values`
+5. If appears at all, add to `available_for`
+
+**Step 2: Statuses**
+
+API Call: `GET /rest/api/{version}/status`
+
+Extract: ID, name, description, status category
+
+**Step 3: Workflows**
+
+API Call: `GET /rest/api/{version}/project/{projectKey}`
+
+Extract from response:
+- Each `issueType` has `statuses` array (workflow statuses)
+- Generate workflow ID sequentially (1, 2, 3...)
+- Create one workflow per issue type
+
+**Step 4: Project Mappings**
+
+Build project workflow mappings from Step 3 data.
+
+### 5.4 Python Implementation
+
+```python
+#!/usr/bin/env python3
+"""JIRA Configuration Exporter"""
+
+import argparse
+import json
+import requests
+from datetime import datetime
+from typing import Dict, List, Any
+
+
+class JiraConfigExporter:
+    def __init__(self, base_url: str, auth_token: str, project_key: str):
+        self.base_url = base_url.rstrip('/')
+        self.project_key = project_key
+        self.session = requests.Session()
+        self.session.headers.update({
+            'Authorization': f'Bearer {auth_token}',
+            'Content-Type': 'application/json'
+        })
+        self.api_version = self._detect_api_version()
+    
+    def _detect_api_version(self) -> str:
+        """Detect if JIRA supports v3 API."""
+        try:
+            response = self.session.get(f'{self.base_url}/rest/api/3/serverInfo')
+            return 'v3' if response.status_code == 200 else 'v2'
+        except:
+            return 'v2'
+    
+    def export_config(self) -> Dict[str, Any]:
+        """Export complete JIRA configuration."""
+        print(f"Exporting from {self.base_url} (API {self.api_version})")
+        
+        config = {
+            "version": "1.0",
+            "metadata": {
+                "exported_at": datetime.utcnow().isoformat() + "Z",
+                "source": f"Production JIRA ({self.base_url})",
+                "project": self.project_key
+            },
+            "statuses": self._export_statuses(),
+            "custom_fields": self._export_custom_fields(),
+            "workflows": [],
+            "project": {}
+        }
+        
+        workflows, project_config = self._export_workflows_and_project()
+        config["workflows"] = workflows
+        config["project"] = project_config
+        
+        return config
+    
+    def _export_statuses(self) -> List[Dict]:
+        """Export all statuses."""
+        endpoint = f'/rest/api/{self.api_version}/status'
+        response = self.session.get(f'{self.base_url}{endpoint}')
+        response.raise_for_status()
+        
+        return [{
+            "status_id": s["id"],
+            "name": s["name"],
+            "description": s.get("description", ""),
+            "status_category": s["statusCategory"]["key"],
+            "icon_url": s.get("iconUrl", "")
+        } for s in response.json()]
+    
+    def _export_custom_fields(self) -> List[Dict]:
+        """Export custom fields with metadata."""
+        # Get all fields
+        endpoint = f'/rest/api/{self.api_version}/field'
+        response = self.session.get(f'{self.base_url}{endpoint}')
+        response.raise_for_status()
+        
+        custom_fields_raw = [f for f in response.json() if f.get("custom")]
+        
+        # Get field metadata
+        createmeta = self._get_createmeta()
+        
+        custom_fields = []
+        for field in custom_fields_raw:
+            metadata = self._extract_field_metadata(field["id"], createmeta)
+            
+            custom_fields.append({
+                "field_id": field["id"],
+                "name": field["name"],
+                "field_type": field["schema"]["type"],
+                "description": field.get("description", ""),
+                "schema_type": field["schema"]["type"],
+                "schema_custom": field["schema"].get("custom", ""),
+                "required_for": metadata["required_for"],
+                "allowed_values": metadata["allowed_values"],
+                "available_for": metadata["available_for"]
+            })
+        
+        return custom_fields
+    
+    def _get_createmeta(self) -> Dict:
+        """Get issue creation metadata."""
+        endpoint = '/rest/api/2/issue/createmeta'
+        params = {
+            'projectKeys': self.project_key,
+            'expand': 'projects.issuetypes.fields'
+        }
+        response = self.session.get(f'{self.base_url}{endpoint}', params=params)
+        response.raise_for_status()
+        return response.json()
+    
+    def _extract_field_metadata(self, field_id: str, createmeta: Dict) -> Dict:
+        """Extract field metadata from createmeta."""
+        metadata = {
+            "required_for": [],
+            "allowed_values": [],
+            "available_for": []
+        }
+        
+        for project in createmeta.get("projects", []):
+            for issuetype in project.get("issuetypes", []):
+                issue_type_name = issuetype["name"]
+                fields = issuetype.get("fields", {})
+                
+                if field_id in fields:
+                    field_meta = fields[field_id]
+                    metadata["available_for"].append(issue_type_name)
+                    
+                    if field_meta.get("required"):
+                        metadata["required_for"].append(issue_type_name)
+                    
+                    if not metadata["allowed_values"] and "allowedValues" in field_meta:
+                        metadata["allowed_values"] = [
+                            v.get("value", v.get("name", str(v)))
+                            for v in field_meta["allowedValues"]
+                        ]
+        
+        return metadata
+    
+    def _export_workflows_and_project(self) -> tuple:
+        """Export workflows and project configuration."""
+        endpoint = f'/rest/api/{self.api_version}/project/{self.project_key}'
+        response = self.session.get(f'{self.base_url}{endpoint}')
+        response.raise_for_status()
+        
+        project_data = response.json()
+        workflows = []
+        workflow_mappings = []
+        workflow_id = 1
+        
+        for issue_type in project_data.get("issueTypes", []):
+            statuses = issue_type.get("statuses", [])
+            
+            if statuses:
+                workflows.append({
+                    "workflow_id": str(workflow_id),
+                    "name": f"{issue_type['name']} Workflow",
+                    "description": f"Workflow for {issue_type['name']} in {self.project_key}",
+                    "statuses": [
+                        {"status_id": s["id"], "sequence": idx + 1}
+                        for idx, s in enumerate(statuses)
+                    ]
+                })
+                
+                workflow_mappings.append({
+                    "issue_type": issue_type["name"],
+                    "workflow_id": str(workflow_id)
+                })
+                
+                workflow_id += 1
+        
+        project_config = {
+            "key": project_data["key"],
+            "name": project_data["name"],
+            "workflows": workflow_mappings
+        }
+        
+        return workflows, project_config
+    
+    def save_to_file(self, config: Dict, output_path: str):
+        """Save configuration to JSON file."""
+        with open(output_path, 'w') as f:
+            json.dump(config, f, indent=2)
+        print(f"✓ Configuration exported to: {output_path}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Export JIRA configuration for jira-emulator'
+    )
+    parser.add_argument('--url', required=True, help='JIRA instance URL')
+    parser.add_argument('--token', required=True, help='API token')
+    parser.add_argument('--project', required=True, help='Project key')
+    parser.add_argument('--output', default='jira-config.json', help='Output file')
+    
+    args = parser.parse_args()
+    
+    try:
+        exporter = JiraConfigExporter(args.url, args.token, args.project)
+        config = exporter.export_config()
+        exporter.save_to_file(config, args.output)
+        
+        print("\nExport Summary:")
+        print(f"  Statuses: {len(config['statuses'])}")
+        print(f"  Custom Fields: {len(config['custom_fields'])}")
+        print(f"  Workflows: {len(config['workflows'])}")
+        print("\nImport to jira-emulator:")
+        print(f"  curl -F 'file=@{args.output}' http://localhost:8080/api/admin/import/full-config")
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        exit(1)
+
+
+if __name__ == '__main__':
+    main()
+```
+
+### 5.5 Usage Examples
+
+**Export from JIRA Cloud:**
+```bash
+python3 jira-config-export.py \
+  --url "https://company.atlassian.net" \
+  --token "YOUR_API_TOKEN" \
+  --project "PROJ" \
+  --output "jira-config.json"
+```
+
+**Export from self-hosted JIRA:**
+```bash
+python3 jira-config-export.py \
+  --url "https://jira.company.com" \
+  --token "YOUR_PAT" \
+  --project "MYPROJECT" \
+  --output "config.json"
+```
+
+**Import into jira-emulator:**
+```bash
+curl -F "file=@jira-config.json" \
+  http://localhost:8080/api/admin/import/full-config
+```
+
+### 5.6 Distribution Options
+
+**Option 1: Python Package**
+```bash
+pip install jira-config-exporter
+jira-config-export --url ... --token ... --project ...
+```
+
+**Option 2: Single Script**
+Distribute as standalone Python file.
+
+**Option 3: Docker Container**
+```dockerfile
+FROM python:3.11-slim
+COPY jira-config-export.py /usr/local/bin/
+RUN pip install requests
+ENTRYPOINT ["python3", "/usr/local/bin/jira-config-export.py"]
+```
+
+**Option 4: DevAIFlow Integration (Future)**
+```bash
+daf jira export-config --output jira-config.json
+```
+
+### 5.7 Error Handling
+
+- **401 Unauthorized**: Check API token
+- **403 Forbidden**: Check permissions (Browse Projects, View Custom Fields, View Workflow)
+- **404 Not Found**: Verify project key exists
+
+---
+
+## 6. Seed Data
 
 **Default seed data with metadata:**
 
@@ -1820,7 +2190,7 @@ DEFAULT_WORKFLOWS = [
 
 ---
 
-## 6. Testing Strategy
+## 7. Testing Strategy
 
 ### 5.1 Unit Tests
 
@@ -1878,9 +2248,9 @@ def test_import_full_config(client, db):
 
 ---
 
-## 7. Documentation
+## 8. Documentation
 
-### 7.1 README Update
+### 8.1 README Update
 
 ```markdown
 ## Enhanced Features
@@ -1918,7 +2288,7 @@ See docs/IMPORT-FORMAT.md for JSON schema.
 
 ---
 
-## 8. Implementation Roadmap
+## 9. Implementation Roadmap
 
 ### Phase 1: Database & Models
 - [ ] Update CustomField model with metadata columns
@@ -1962,7 +2332,7 @@ See docs/IMPORT-FORMAT.md for JSON schema.
 
 ---
 
-## 9. Success Criteria
+## 10. Success Criteria
 
 **Complete When:**
 - ✅ All database models created
