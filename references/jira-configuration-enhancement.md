@@ -12,13 +12,13 @@ This specification defines enhancements to jira-emulator to support:
 3. Configuration import system (JSON-based)
 
 **Goals:**
-- Match real JIRA REST API v2 behavior
+- Match real JIRA REST API v2 and v3 behavior
 - Enable realistic field validation and status workflows
 - Provide import/export capabilities for configuration
+- Support both v2 and v3 APIs for maximum compatibility
 - Remain database-agnostic (SQLite for testing, PostgreSQL for production)
 
 **Non-Goals:**
-- JIRA v3 API support (v2 only)
 - Integration with specific tools (import format is generic)
 - Production-level workflow engine (simplified for testing)
 - Backward compatibility with existing installations
@@ -663,7 +663,668 @@ async def get_create_metadata(
 
 ---
 
-## 3. Import/Export System
+## 3. REST API v3 Enhancements
+
+### 3.1 Field API (v3)
+
+**GET /rest/api/3/field**
+
+List all fields including custom field metadata (v3 equivalent of v2).
+
+**Response format:**
+
+```json
+[
+  {
+    "id": "customfield_10001",
+    "key": "customfield_10001",
+    "name": "Story Points",
+    "custom": true,
+    "orderable": true,
+    "navigable": true,
+    "searchable": true,
+    "clauseNames": ["cf[10001]", "Story Points"],
+    "schema": {
+      "type": "number",
+      "custom": "com.atlassian.jira.plugin.system.customfieldtypes:float",
+      "customId": 10001
+    },
+    "required_for": ["Story", "Epic"],
+    "allowed_values": [],
+    "available_for": ["Story", "Epic", "Task"]
+  }
+]
+```
+
+**POST /rest/api/3/field**
+
+Create a new custom field.
+
+**Request body:**
+
+```json
+{
+  "name": "Sprint",
+  "description": "Sprint identifier",
+  "type": "com.atlassian.jira.plugin.system.customfieldtypes:textfield",
+  "searcherKey": "com.atlassian.jira.plugin.system.customfieldtypes:textsearcher"
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "customfield_10010",
+  "key": "customfield_10010",
+  "name": "Sprint",
+  "custom": true,
+  "schema": {
+    "type": "string",
+    "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textfield"
+  }
+}
+```
+
+**Implementation:**
+
+```python
+# src/jira_emulator/routers/fields_v3.py
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from ..database import get_db
+from ..models.custom_field import CustomField
+
+router = APIRouter()
+
+class CreateFieldRequest(BaseModel):
+    name: str
+    description: str = None
+    type: str
+    searcherKey: str = None
+
+@router.get("/rest/api/3/field")
+async def get_fields_v3(db: Session = Depends(get_db)):
+    """Get all fields (v3 API)."""
+    # Similar to v2 but with v3 response format
+    fields = []
+    
+    # System fields
+    fields.extend([
+        {
+            "id": "summary",
+            "key": "summary",
+            "name": "Summary",
+            "custom": False,
+            "orderable": True,
+            "navigable": True,
+            "searchable": True,
+            "schema": {"type": "string", "system": "summary"}
+        },
+        # ... other system fields
+    ])
+    
+    # Custom fields
+    custom_fields = db.query(CustomField).all()
+    for cf in custom_fields:
+        fields.append({
+            "id": cf.field_id,
+            "key": cf.field_id,
+            "name": cf.name,
+            "custom": True,
+            "orderable": True,
+            "navigable": True,
+            "searchable": True,
+            "clauseNames": [f"cf[{cf.field_id.replace('customfield_', '')}]", cf.name],
+            "schema": {
+                "type": cf.schema_type or cf.field_type,
+                "custom": cf.schema_custom,
+                "customId": int(cf.field_id.replace("customfield_", ""))
+            },
+            "required_for": cf.required_for or [],
+            "allowed_values": cf.allowed_values or [],
+            "available_for": cf.available_for or []
+        })
+    
+    return fields
+
+@router.post("/rest/api/3/field")
+async def create_field_v3(request: CreateFieldRequest, db: Session = Depends(get_db)):
+    """Create custom field (v3 API)."""
+    # Generate next field ID
+    existing_fields = db.query(CustomField).all()
+    max_id = 10000
+    for field in existing_fields:
+        field_num = int(field.field_id.replace("customfield_", ""))
+        max_id = max(max_id, field_num)
+    
+    new_field_id = f"customfield_{max_id + 1}"
+    
+    # Determine schema type from custom type
+    schema_type = "string"  # default
+    if "float" in request.type or "number" in request.type:
+        schema_type = "number"
+    elif "select" in request.type or "radiobuttons" in request.type:
+        schema_type = "option"
+    elif "multiselect" in request.type or "multicheckboxes" in request.type:
+        schema_type = "array"
+    elif "datepicker" in request.type:
+        schema_type = "date"
+    
+    custom_field = CustomField(
+        field_id=new_field_id,
+        name=request.name,
+        field_type=schema_type,
+        description=request.description,
+        schema_type=schema_type,
+        schema_custom=request.type,
+        required_for=[],
+        allowed_values=[],
+        available_for=[]
+    )
+    
+    db.add(custom_field)
+    db.commit()
+    db.refresh(custom_field)
+    
+    return {
+        "id": custom_field.field_id,
+        "key": custom_field.field_id,
+        "name": custom_field.name,
+        "custom": True,
+        "schema": {
+            "type": custom_field.schema_type,
+            "custom": custom_field.schema_custom
+        }
+    }
+
+@router.put("/rest/api/3/field/{field_id}")
+async def update_field_v3(field_id: str, request: dict, db: Session = Depends(get_db)):
+    """Update custom field metadata (v3 API)."""
+    custom_field = db.query(CustomField).filter(CustomField.field_id == field_id).first()
+    if not custom_field:
+        raise HTTPException(status_code=404, detail="Field not found")
+    
+    # Update allowed fields
+    if "name" in request:
+        custom_field.name = request["name"]
+    if "description" in request:
+        custom_field.description = request["description"]
+    if "required_for" in request:
+        custom_field.required_for = request["required_for"]
+    if "allowed_values" in request:
+        custom_field.allowed_values = request["allowed_values"]
+    if "available_for" in request:
+        custom_field.available_for = request["available_for"]
+    
+    db.commit()
+    db.refresh(custom_field)
+    
+    return {
+        "id": custom_field.field_id,
+        "key": custom_field.field_id,
+        "name": custom_field.name,
+        "custom": True,
+        "schema": {
+            "type": custom_field.schema_type,
+            "custom": custom_field.schema_custom
+        },
+        "required_for": custom_field.required_for or [],
+        "allowed_values": custom_field.allowed_values or [],
+        "available_for": custom_field.available_for or []
+    }
+```
+
+### 3.2 Status API (v3)
+
+**GET /rest/api/3/status**
+
+List all statuses (v3 equivalent).
+
+**Response format:**
+
+```json
+[
+  {
+    "self": "http://localhost:8080/rest/api/3/status/1",
+    "description": "The issue is open and ready for work.",
+    "name": "To Do",
+    "id": "1",
+    "statusCategory": {
+      "self": "http://localhost:8080/rest/api/3/statuscategory/2",
+      "id": 2,
+      "key": "new",
+      "colorName": "blue-gray",
+      "name": "To Do"
+    }
+  }
+]
+```
+
+**POST /rest/api/3/statuses**
+
+Create a new status.
+
+**Request body:**
+
+```json
+{
+  "name": "In Review",
+  "description": "Code review in progress",
+  "statusCategory": "indeterminate"
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "10001",
+  "name": "In Review",
+  "description": "Code review in progress",
+  "statusCategory": {
+    "id": 4,
+    "key": "indeterminate",
+    "name": "In Progress"
+  }
+}
+```
+
+**PUT /rest/api/3/status/{idOrName}**
+
+Update an existing status.
+
+**Implementation:**
+
+```python
+# src/jira_emulator/routers/status_v3.py
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from ..database import get_db
+from ..models.status import Status
+
+router = APIRouter()
+
+STATUS_CATEGORIES = {
+    "new": {"id": 2, "key": "new", "colorName": "blue-gray", "name": "To Do"},
+    "indeterminate": {"id": 4, "key": "indeterminate", "colorName": "yellow", "name": "In Progress"},
+    "done": {"id": 3, "key": "done", "colorName": "green", "name": "Done"}
+}
+
+class CreateStatusRequest(BaseModel):
+    name: str
+    description: str = None
+    statusCategory: str  # "new", "indeterminate", or "done"
+
+@router.get("/rest/api/3/status")
+async def get_statuses_v3(db: Session = Depends(get_db)):
+    """Get all statuses (v3 API)."""
+    statuses = db.query(Status).all()
+    
+    result = []
+    for status in statuses:
+        category = STATUS_CATEGORIES.get(status.status_category, STATUS_CATEGORIES["indeterminate"])
+        result.append({
+            "self": f"http://localhost:8080/rest/api/3/status/{status.status_id}",
+            "description": status.description or "",
+            "name": status.name,
+            "id": status.status_id,
+            "statusCategory": {
+                "self": f"http://localhost:8080/rest/api/3/statuscategory/{category['id']}",
+                "id": category["id"],
+                "key": category["key"],
+                "colorName": category["colorName"],
+                "name": category["name"]
+            }
+        })
+    
+    return result
+
+@router.post("/rest/api/3/statuses")
+async def create_status_v3(request: CreateStatusRequest, db: Session = Depends(get_db)):
+    """Create status (v3 API)."""
+    # Generate next status ID
+    existing_statuses = db.query(Status).all()
+    max_id = 10000
+    for status in existing_statuses:
+        try:
+            status_num = int(status.status_id)
+            max_id = max(max_id, status_num)
+        except ValueError:
+            pass
+    
+    new_status_id = str(max_id + 1)
+    
+    # Validate status category
+    if request.statusCategory not in STATUS_CATEGORIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status category. Must be one of: {', '.join(STATUS_CATEGORIES.keys())}"
+        )
+    
+    status = Status(
+        status_id=new_status_id,
+        name=request.name,
+        description=request.description,
+        status_category=request.statusCategory,
+        icon_url=f"http://localhost:8080/images/icons/statuses/{request.statusCategory}.png"
+    )
+    
+    db.add(status)
+    db.commit()
+    db.refresh(status)
+    
+    category = STATUS_CATEGORIES[status.status_category]
+    
+    return {
+        "id": status.status_id,
+        "name": status.name,
+        "description": status.description,
+        "statusCategory": {
+            "id": category["id"],
+            "key": category["key"],
+            "colorName": category["colorName"],
+            "name": category["name"]
+        }
+    }
+
+@router.put("/rest/api/3/status/{id_or_name}")
+async def update_status_v3(id_or_name: str, request: dict, db: Session = Depends(get_db)):
+    """Update status (v3 API)."""
+    # Try to find by ID first, then by name
+    status = db.query(Status).filter(Status.status_id == id_or_name).first()
+    if not status:
+        status = db.query(Status).filter(Status.name == id_or_name).first()
+    
+    if not status:
+        raise HTTPException(status_code=404, detail="Status not found")
+    
+    # Update allowed fields
+    if "name" in request:
+        status.name = request["name"]
+    if "description" in request:
+        status.description = request["description"]
+    if "statusCategory" in request:
+        if request["statusCategory"] not in STATUS_CATEGORIES:
+            raise HTTPException(status_code=400, detail="Invalid status category")
+        status.status_category = request["statusCategory"]
+    
+    db.commit()
+    db.refresh(status)
+    
+    category = STATUS_CATEGORIES[status.status_category]
+    
+    return {
+        "id": status.status_id,
+        "name": status.name,
+        "description": status.description,
+        "statusCategory": category
+    }
+```
+
+### 3.3 Workflow API (v3)
+
+**POST /rest/api/3/workflow**
+
+Create a new workflow.
+
+**Request body:**
+
+```json
+{
+  "name": "Bug Workflow",
+  "description": "Workflow for bug tracking",
+  "statuses": [
+    {"statusId": "1", "sequence": 1},
+    {"statusId": "3", "sequence": 2},
+    {"statusId": "10000", "sequence": 3}
+  ]
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "2",
+  "name": "Bug Workflow",
+  "description": "Workflow for bug tracking",
+  "statuses": [
+    {"id": "1", "name": "To Do", "sequence": 1},
+    {"id": "3", "name": "In Progress", "sequence": 2},
+    {"id": "10000", "name": "Done", "sequence": 3}
+  ]
+}
+```
+
+**PUT /rest/api/3/workflow/{workflowId}**
+
+Update an existing workflow.
+
+**Implementation:**
+
+```python
+# src/jira_emulator/routers/workflow_v3.py
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from typing import List
+from ..database import get_db
+from ..models.workflow import Workflow, WorkflowStatus
+from ..models.status import Status
+
+router = APIRouter()
+
+class WorkflowStatusItem(BaseModel):
+    statusId: str
+    sequence: int
+
+class CreateWorkflowRequest(BaseModel):
+    name: str
+    description: str = None
+    statuses: List[WorkflowStatusItem]
+
+@router.post("/rest/api/3/workflow")
+async def create_workflow_v3(request: CreateWorkflowRequest, db: Session = Depends(get_db)):
+    """Create workflow (v3 API)."""
+    # Generate next workflow ID
+    existing_workflows = db.query(Workflow).all()
+    max_id = 1
+    for wf in existing_workflows:
+        try:
+            wf_num = int(wf.workflow_id)
+            max_id = max(max_id, wf_num)
+        except ValueError:
+            pass
+    
+    new_workflow_id = str(max_id + 1)
+    
+    workflow = Workflow(
+        workflow_id=new_workflow_id,
+        name=request.name,
+        description=request.description
+    )
+    
+    db.add(workflow)
+    db.flush()
+    
+    # Add workflow statuses
+    result_statuses = []
+    for status_item in request.statuses:
+        status = db.query(Status).filter(Status.status_id == status_item.statusId).first()
+        if not status:
+            db.rollback()
+            raise HTTPException(status_code=404, detail=f"Status {status_item.statusId} not found")
+        
+        ws = WorkflowStatus(
+            workflow_id=workflow.id,
+            status_id=status.id,
+            sequence=status_item.sequence
+        )
+        db.add(ws)
+        
+        result_statuses.append({
+            "id": status.status_id,
+            "name": status.name,
+            "sequence": status_item.sequence
+        })
+    
+    db.commit()
+    
+    return {
+        "id": workflow.workflow_id,
+        "name": workflow.name,
+        "description": workflow.description,
+        "statuses": result_statuses
+    }
+
+@router.put("/rest/api/3/workflow/{workflow_id}")
+async def update_workflow_v3(workflow_id: str, request: dict, db: Session = Depends(get_db)):
+    """Update workflow (v3 API)."""
+    workflow = db.query(Workflow).filter(Workflow.workflow_id == workflow_id).first()
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    
+    # Update name/description
+    if "name" in request:
+        workflow.name = request["name"]
+    if "description" in request:
+        workflow.description = request["description"]
+    
+    # Update statuses if provided
+    if "statuses" in request:
+        # Delete existing workflow statuses
+        db.query(WorkflowStatus).filter(WorkflowStatus.workflow_id == workflow.id).delete()
+        
+        # Add new statuses
+        for status_item in request["statuses"]:
+            status = db.query(Status).filter(Status.status_id == status_item["statusId"]).first()
+            if status:
+                ws = WorkflowStatus(
+                    workflow_id=workflow.id,
+                    status_id=status.id,
+                    sequence=status_item["sequence"]
+                )
+                db.add(ws)
+    
+    db.commit()
+    
+    # Return updated workflow
+    workflow_statuses = db.query(WorkflowStatus, Status).join(
+        Status, WorkflowStatus.status_id == Status.id
+    ).filter(
+        WorkflowStatus.workflow_id == workflow.id
+    ).order_by(WorkflowStatus.sequence).all()
+    
+    result_statuses = [
+        {
+            "id": status.status_id,
+            "name": status.name,
+            "sequence": ws.sequence
+        }
+        for ws, status in workflow_statuses
+    ]
+    
+    return {
+        "id": workflow.workflow_id,
+        "name": workflow.name,
+        "description": workflow.description,
+        "statuses": result_statuses
+    }
+```
+
+### 3.4 Project Configuration API (v3)
+
+**PUT /rest/api/3/project/{projectKey}/workflowscheme**
+
+Assign workflows to issue types in a project.
+
+**Request body:**
+
+```json
+{
+  "issueTypeMappings": [
+    {
+      "issueType": "Bug",
+      "workflowId": "1"
+    },
+    {
+      "issueType": "Story",
+      "workflowId": "2"
+    }
+  ]
+}
+```
+
+**Implementation:**
+
+```python
+# src/jira_emulator/routers/projects_v3.py
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import List
+from pydantic import BaseModel
+from ..database import get_db
+from ..models.project import Project
+from ..models.issue_type import IssueType
+from ..models.workflow import Workflow
+from ..models.project_workflow import ProjectWorkflow
+
+router = APIRouter()
+
+class IssueTypeMapping(BaseModel):
+    issueType: str
+    workflowId: str
+
+class WorkflowSchemeRequest(BaseModel):
+    issueTypeMappings: List[IssueTypeMapping]
+
+@router.put("/rest/api/3/project/{project_key}/workflowscheme")
+async def update_project_workflow_scheme_v3(
+    project_key: str,
+    request: WorkflowSchemeRequest,
+    db: Session = Depends(get_db)
+):
+    """Assign workflows to issue types (v3 API)."""
+    project = db.query(Project).filter(Project.key == project_key).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    for mapping in request.issueTypeMappings:
+        issue_type = db.query(IssueType).filter(IssueType.name == mapping.issueType).first()
+        if not issue_type:
+            raise HTTPException(status_code=404, detail=f"Issue type {mapping.issueType} not found")
+        
+        workflow = db.query(Workflow).filter(Workflow.workflow_id == mapping.workflowId).first()
+        if not workflow:
+            raise HTTPException(status_code=404, detail=f"Workflow {mapping.workflowId} not found")
+        
+        # Update or create mapping
+        existing = db.query(ProjectWorkflow).filter(
+            ProjectWorkflow.project_id == project.id,
+            ProjectWorkflow.issue_type_id == issue_type.id
+        ).first()
+        
+        if existing:
+            existing.workflow_id = workflow.id
+        else:
+            pw = ProjectWorkflow(
+                project_id=project.id,
+                issue_type_id=issue_type.id,
+                workflow_id=workflow.id
+            )
+            db.add(pw)
+    
+    db.commit()
+    
+    return {"success": True, "message": "Workflow scheme updated"}
+```
+
+---
+
+## 4. Import/Export System
 
 ### 3.1 Import Format Specification
 
@@ -1088,7 +1749,7 @@ async def export_full_config(db: Session = Depends(get_db)):
 
 ---
 
-## 4. Seed Data
+## 5. Seed Data
 
 **Default seed data with metadata:**
 
@@ -1159,7 +1820,7 @@ DEFAULT_WORKFLOWS = [
 
 ---
 
-## 5. Testing Strategy
+## 6. Testing Strategy
 
 ### 5.1 Unit Tests
 
@@ -1217,25 +1878,38 @@ def test_import_full_config(client, db):
 
 ---
 
-## 6. Documentation
+## 7. Documentation
 
-### 6.1 README Update
+### 7.1 README Update
 
 ```markdown
 ## Enhanced Features
 
-jira-emulator now supports:
+jira-emulator now supports both JIRA REST API v2 and v3:
 
 ### Field Metadata
 - **required_for**: Which issue types require the field
 - **allowed_values**: Valid dropdown values
 - **available_for**: Which issue types can use the field
 
-### Status & Workflow APIs
+### REST API v2 (Read-Only)
+- `GET /rest/api/2/field` - List all fields with metadata
 - `GET /rest/api/2/status` - List all statuses
 - `GET /rest/api/2/project/{key}` - Get project with workflows
+- `GET /rest/api/2/issue/createmeta` - Get field validation rules
 
-### Import/Export
+### REST API v3 (Read & Write)
+- `GET /rest/api/3/field` - List all fields
+- `POST /rest/api/3/field` - Create custom field
+- `PUT /rest/api/3/field/{fieldId}` - Update custom field metadata
+- `GET /rest/api/3/status` - List all statuses
+- `POST /rest/api/3/statuses` - Create status
+- `PUT /rest/api/3/status/{idOrName}` - Update status
+- `POST /rest/api/3/workflow` - Create workflow
+- `PUT /rest/api/3/workflow/{workflowId}` - Update workflow
+- `PUT /rest/api/3/project/{key}/workflowscheme` - Configure project workflows
+
+### Import/Export (Bulk Operations)
 - `POST /api/admin/import/full-config` - Import configuration
 - `GET /api/admin/export/full-config` - Export configuration
 
@@ -1244,7 +1918,7 @@ See docs/IMPORT-FORMAT.md for JSON schema.
 
 ---
 
-## 7. Implementation Roadmap
+## 8. Implementation Roadmap
 
 ### Phase 1: Database & Models
 - [ ] Update CustomField model with metadata columns
@@ -1252,19 +1926,35 @@ See docs/IMPORT-FORMAT.md for JSON schema.
 - [ ] Update seed data with metadata
 - [ ] Test database schema
 
-### Phase 2: Read APIs
+### Phase 2: Read APIs (v2)
 - [ ] Implement enhanced GET /rest/api/2/field
 - [ ] Implement GET /rest/api/2/status
 - [ ] Implement enhanced GET /rest/api/2/project/{key}
 - [ ] Implement GET /rest/api/2/issue/createmeta
 - [ ] Write unit tests
 
-### Phase 3: Import/Export
+### Phase 3: Read APIs (v3)
+- [ ] Implement GET /rest/api/3/field
+- [ ] Implement GET /rest/api/3/status
+- [ ] Implement GET /rest/api/3/project/{key}
+- [ ] Write unit tests
+
+### Phase 4: Write APIs (v3)
+- [ ] Implement POST /rest/api/3/field (create custom field)
+- [ ] Implement PUT /rest/api/3/field/{fieldId} (update custom field)
+- [ ] Implement POST /rest/api/3/statuses (create status)
+- [ ] Implement PUT /rest/api/3/status/{idOrName} (update status)
+- [ ] Implement POST /rest/api/3/workflow (create workflow)
+- [ ] Implement PUT /rest/api/3/workflow/{workflowId} (update workflow)
+- [ ] Implement PUT /rest/api/3/project/{key}/workflowscheme
+- [ ] Write unit tests
+
+### Phase 5: Import/Export
 - [ ] Implement POST /api/admin/import/full-config
 - [ ] Implement GET /api/admin/export/full-config
 - [ ] Write integration tests
 
-### Phase 4: Documentation
+### Phase 6: Documentation
 - [ ] Update README
 - [ ] Create API documentation
 - [ ] Create import format specification
@@ -1272,14 +1962,17 @@ See docs/IMPORT-FORMAT.md for JSON schema.
 
 ---
 
-## 8. Success Criteria
+## 9. Success Criteria
 
 **Complete When:**
 - ✅ All database models created
-- ✅ All read APIs implemented
+- ✅ All v2 read APIs implemented and tested
+- ✅ All v3 read APIs implemented and tested
+- ✅ All v3 write APIs implemented and tested
 - ✅ Import/export APIs functional
-- ✅ Can import configuration and use it
-- ✅ All tests passing
+- ✅ Can create/update configuration via v3 APIs
+- ✅ Can import configuration via import endpoint
+- ✅ All tests passing (unit and integration)
 - ✅ Documentation complete
 
 ---
