@@ -44,6 +44,7 @@ async def search_issues_post(
 
 
 @router.get("/search")
+@router.get("/search/jql")
 async def search_issues_get(
     request: Request,
     jql: str = Query(default=""),
@@ -53,7 +54,11 @@ async def search_issues_get(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Search for issues via JQL (GET)."""
+    """Search for issues via JQL (GET).
+
+    Also mounted at ``/search/jql`` to support Jira API v3 clients that
+    use ``GET /rest/api/3/search/jql`` (rewritten to v2 by middleware).
+    """
     settings = get_settings()
 
     fields_filter = None
