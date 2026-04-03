@@ -24,6 +24,7 @@ async def search_issues(
     fields_filter: list[str] | None = None,
     current_user: User | None = None,
     base_url: str = "",
+    api_version: int = 2,
 ) -> dict:
     """Execute a JQL search and return a Jira REST-style response dict.
 
@@ -109,6 +110,7 @@ async def search_issues(
             base_url=base_url,
             db=db,
             fields_filter=fields_filter,
+            api_version=api_version,
         )
         formatted_issues.append(formatted)
 

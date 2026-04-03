@@ -231,3 +231,137 @@ async def test_list_comments(client: httpx.AsyncClient):
     assert len(data["comments"]) == 2
     assert data["comments"][0]["body"] == "First comment"
     assert data["comments"][1]["body"] == "Second comment"
+
+
+# ---------------------------------------------------------------------------
+# ADF (Atlassian Document Format) – v2 vs v3
+# ---------------------------------------------------------------------------
+
+# A sample ADF document with bold, heading, and link nodes.
+_SAMPLE_ADF = {
+    "version": 1,
+    "type": "doc",
+    "content": [
+        {
+            "type": "heading",
+            "attrs": {"level": 2},
+            "content": [{"type": "text", "text": "Problem Statement"}],
+        },
+        {
+            "type": "paragraph",
+            "content": [
+                {"type": "text", "text": "This is "},
+                {"type": "text", "text": "important", "marks": [{"type": "strong"}]},
+                {"type": "text", "text": " because of "},
+                {
+                    "type": "text",
+                    "text": "this link",
+                    "marks": [{"type": "link", "attrs": {"href": "https://example.com"}}],
+                },
+                {"type": "text", "text": "."},
+            ],
+        },
+    ],
+}
+
+
+async def test_create_issue_with_adf_via_v3(client: httpx.AsyncClient):
+    """Creating an issue via v3 with an ADF description should preserve it."""
+    resp = await client.post(
+        "/rest/api/3/issue",
+        json={
+            "fields": {
+                "project": {"key": "RHOAIENG"},
+                "summary": "ADF test issue",
+                "issuetype": {"name": "Bug"},
+                "description": _SAMPLE_ADF,
+            }
+        },
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 201, resp.text
+    key = resp.json()["key"]
+
+    # Read back via v3 → should get full ADF dict
+    resp = await client.get(f"/rest/api/3/issue/{key}", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    desc = resp.json()["fields"]["description"]
+    assert isinstance(desc, dict)
+    assert desc["type"] == "doc"
+    assert desc == _SAMPLE_ADF
+
+    # Read back via v2 → should get plain text
+    resp = await client.get(f"/rest/api/2/issue/{key}", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    desc_v2 = resp.json()["fields"]["description"]
+    assert isinstance(desc_v2, str)
+    assert "Problem Statement" in desc_v2
+    assert "important" in desc_v2
+    assert "this link" in desc_v2
+
+
+async def test_create_issue_plain_text_read_via_v3(client: httpx.AsyncClient):
+    """Creating an issue via v2 with plain text, reading via v3 returns ADF."""
+    resp = await client.post(
+        "/rest/api/2/issue",
+        json={
+            "fields": {
+                "project": {"key": "RHOAIENG"},
+                "summary": "Plain text issue",
+                "issuetype": {"name": "Bug"},
+                "description": "Simple plain text description",
+            }
+        },
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 201, resp.text
+    key = resp.json()["key"]
+
+    # Read via v3 → wrapped in ADF paragraphs
+    resp = await client.get(f"/rest/api/3/issue/{key}", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    desc = resp.json()["fields"]["description"]
+    assert isinstance(desc, dict)
+    assert desc["type"] == "doc"
+    assert desc["version"] == 1
+    assert desc["content"][0]["content"][0]["text"] == "Simple plain text description"
+
+    # Read via v2 → still plain text
+    resp = await client.get(f"/rest/api/2/issue/{key}", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    assert resp.json()["fields"]["description"] == "Simple plain text description"
+
+
+async def test_comment_adf_via_v3(client: httpx.AsyncClient):
+    """Adding a comment via v3 with ADF body should preserve it."""
+    created = await _create_issue(client)
+    key = created["key"]
+
+    adf_body = {
+        "version": 1,
+        "type": "doc",
+        "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": "ADF comment"}]},
+        ],
+    }
+
+    # Add comment via v3
+    resp = await client.post(
+        f"/rest/api/3/issue/{key}/comment",
+        json={"body": adf_body},
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()["body"]
+    assert isinstance(body, dict)
+    assert body["type"] == "doc"
+
+    # Read comments via v2 → plain text
+    resp = await client.get(
+        f"/rest/api/2/issue/{key}/comment",
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 200
+    v2_body = resp.json()["comments"][0]["body"]
+    assert isinstance(v2_body, str)
+    assert v2_body == "ADF comment"

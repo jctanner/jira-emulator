@@ -103,8 +103,11 @@ def create_app() -> FastAPI:
     class ApiVersionRewriteMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next):
             if request.url.path.startswith("/rest/api/3/"):
+                request.state.api_version = 3
                 new_path = "/rest/api/2/" + request.url.path[len("/rest/api/3/"):]
                 request.scope["path"] = new_path
+            else:
+                request.state.api_version = 2
             return await call_next(request)
 
     app.add_middleware(ApiVersionRewriteMiddleware)

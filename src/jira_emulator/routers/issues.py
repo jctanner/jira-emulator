@@ -18,10 +18,16 @@ from jira_emulator.schemas.issue import (
     TransitionRequest,
     UpdateIssueRequest,
 )
+from jira_emulator.adf import serialize_adf
 from jira_emulator.services import issue_service, history_service
+from jira_emulator.services.issue_service import _format_rich_field
 from jira_emulator.services.user_service import get_or_create_user
 
 router = APIRouter(prefix="/rest/api/2")
+
+
+def _get_api_version(request: Request) -> int:
+    return getattr(request.state, "api_version", 2)
 
 
 def _format_datetime(dt: datetime | None) -> str | None:
@@ -103,7 +109,8 @@ async def get_issue(
         fields_filter = [f.strip() for f in fields.split(",")]
 
     return await issue_service.format_issue_response(
-        issue, base_url, db, fields_filter=fields_filter
+        issue, base_url, db, fields_filter=fields_filter,
+        api_version=_get_api_version(request),
     )
 
 
@@ -195,6 +202,7 @@ async def list_comments(
     )
     total = count_result.scalar() or 0
 
+    api_version = _get_api_version(request)
     comment_dicts = []
     for c in comments:
         comment_dicts.append({
@@ -202,7 +210,7 @@ async def list_comments(
             "id": str(c.id),
             "author": _format_user(c.author, base_url),
             "updateAuthor": _format_user(c.author, base_url),
-            "body": c.body,
+            "body": _format_rich_field(c.body, api_version),
             "created": _format_datetime(c.created_at),
             "updated": _format_datetime(c.updated_at),
             "visibility": (
@@ -246,11 +254,13 @@ async def add_comment(
         username=current_user.username,
     )
 
+    stored_body = serialize_adf(body.body) or ""
+
     now = datetime.utcnow()
     comment = Comment(
         issue_id=issue.id,
         author_id=author.id,
-        body=body.body,
+        body=stored_body,
         visibility_type=body.visibility.get("type") if body.visibility else None,
         visibility_value=body.visibility.get("value") if body.visibility else None,
         created_at=now,
@@ -264,12 +274,13 @@ async def add_comment(
         None, None, comment.body, str(comment.id),
     )
 
+    api_version = _get_api_version(request)
     return {
         "self": f"{base_url}/rest/api/2/issue/{issue.id}/comment/{comment.id}",
         "id": str(comment.id),
         "author": _format_user(author, base_url),
         "updateAuthor": _format_user(author, base_url),
-        "body": comment.body,
+        "body": _format_rich_field(comment.body, api_version),
         "created": _format_datetime(comment.created_at),
         "updated": _format_datetime(comment.updated_at),
     }

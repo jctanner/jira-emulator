@@ -17,6 +17,10 @@ def _jira_error(messages: list[str], errors: dict | None = None) -> dict:
     return {"errorMessages": messages, "errors": errors or {}}
 
 
+def _get_api_version(request: Request) -> int:
+    return getattr(request.state, "api_version", 2)
+
+
 @router.post("/search")
 async def search_issues_post(
     body: SearchRequest,
@@ -35,6 +39,7 @@ async def search_issues_post(
             fields_filter=body.fields,
             current_user=current_user,
             base_url=settings.BASE_URL,
+            api_version=_get_api_version(request),
         )
     except ValueError as exc:
         raise HTTPException(
@@ -74,6 +79,7 @@ async def search_issues_get(
             fields_filter=fields_filter,
             current_user=current_user,
             base_url=settings.BASE_URL,
+            api_version=_get_api_version(request),
         )
     except ValueError as exc:
         raise HTTPException(

@@ -23,6 +23,7 @@ from jira_emulator.models.watcher import Watcher
 from jira_emulator.models.workflow import Workflow, WorkflowTransition
 from jira_emulator.models.attachment import Attachment
 from jira_emulator.models.issue_history import IssueHistory
+from jira_emulator.adf import is_adf, text_to_adf, adf_to_text, serialize_adf
 from jira_emulator.services import user_service
 from jira_emulator.services import history_service
 
@@ -75,6 +76,20 @@ def _format_attachments(issue: "Issue", base_url: str) -> list[dict]:
             entry["thumbnail"] = f"{base_url}/rest/api/2/attachment/thumbnail/{att.id}"
         result.append(entry)
     return result
+
+
+def _format_rich_field(value: str | None, api_version: int) -> str | dict | None:
+    """Format a rich-text field (description / comment body) for the response.
+
+    * v3: return an ADF dict (wrapping plain text if needed).
+    * v2: return plain text (extracting from stored ADF if needed).
+    """
+    if api_version == 3:
+        return text_to_adf(value)
+    # v2
+    if value is not None and is_adf(value):
+        return adf_to_text(value)
+    return value
 
 
 def _status_category_for(category: str) -> dict:
@@ -266,7 +281,7 @@ async def create_issue(
         project_id=project.id,
         issue_type_id=issue_type.id,
         summary=fields.get("summary", ""),
-        description=fields.get("description"),
+        description=serialize_adf(fields.get("description")),
         status_id=status.id,
         priority_id=priority.id if priority else None,
         assignee_id=assignee.id if assignee else None,
@@ -423,7 +438,7 @@ async def _apply_field_updates(
 
     if "description" in fields:
         old = issue.description
-        new = fields["description"]
+        new = serialize_adf(fields["description"])
         if old != new:
             issue.description = new
             await history_service.record_change(
@@ -765,7 +780,8 @@ async def _apply_update_ops(
         for op in update_ops["comment"]:
             if "add" in op:
                 comment_data = op["add"]
-                body = comment_data.get("body", "") if isinstance(comment_data, dict) else str(comment_data)
+                raw_body = comment_data.get("body", "") if isinstance(comment_data, dict) else str(comment_data)
+                body = serialize_adf(raw_body) or ""
                 comment = Comment(issue_id=issue.id, body=body, author_id=author_id)
                 db.add(comment)
                 await db.flush()
@@ -798,6 +814,7 @@ async def format_issue_response(
     base_url: str,
     db: AsyncSession,
     fields_filter: list[str] | None = None,
+    api_version: int = 2,
 ) -> dict:
     """Build the full Jira REST-style JSON response for a single issue.
 
@@ -901,7 +918,7 @@ async def format_issue_response(
             "self": f"{base_url}/rest/api/2/issue/{issue.id}/comment/{c.id}",
             "id": str(c.id),
             "author": _format_user(c.author, base_url),
-            "body": c.body,
+            "body": _format_rich_field(c.body, api_version),
             "updateAuthor": _format_user(c.author, base_url),
             "created": _format_datetime(c.created_at),
             "updated": _format_datetime(c.updated_at),
@@ -1022,7 +1039,7 @@ async def format_issue_response(
         "issuetype": issue_type_ref,
         "project": project_ref,
         "summary": issue.summary,
-        "description": issue.description,
+        "description": _format_rich_field(issue.description, api_version),
         "status": status_ref,
         "priority": priority_ref,
         "resolution": resolution_ref,

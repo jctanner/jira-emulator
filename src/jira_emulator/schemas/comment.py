@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class CreateCommentRequest(BaseModel):
     """POST /rest/api/2/issue/{issueIdOrKey}/comment body."""
 
-    body: str
+    body: str | dict
     visibility: dict | None = None
 
 

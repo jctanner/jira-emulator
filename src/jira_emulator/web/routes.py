@@ -22,6 +22,7 @@ from jira_emulator.models.user import User
 from jira_emulator.models.status import Status
 from jira_emulator.models.issue_type import IssueType
 from jira_emulator.models.priority import Priority
+from jira_emulator.adf import is_adf, adf_to_markdown
 from jira_emulator.services import issue_service, search_service, history_service
 from jira_emulator.services.user_service import get_or_create_user
 
@@ -233,6 +234,17 @@ async def issue_detail(request: Request, key: str, db: AsyncSession = Depends(ge
 
     base_url = str(request.base_url).rstrip("/")
     formatted = await issue_service.format_issue_response(issue, base_url, db)
+
+    # Convert ADF-stored descriptions and comment bodies to markdown for
+    # the web UI so that marked.js can render bold, links, headings, etc.
+    raw_desc = issue.description
+    if raw_desc and is_adf(raw_desc):
+        formatted["fields"]["description"] = adf_to_markdown(raw_desc)
+
+    for c in formatted["fields"].get("comment", {}).get("comments", []):
+        body = c.get("body")
+        if isinstance(body, str) and is_adf(body):
+            c["body"] = adf_to_markdown(body)
 
     # Load metadata for the edit modal
     all_projects = (
