@@ -240,6 +240,51 @@ async def test_close_without_resolution_defaults_to_done(client):
 
 
 @pytest.mark.asyncio
+async def test_close_with_resolution_override_via_v3(client):
+    """Transition to Closed with explicit resolution works via v3 API."""
+    issue = await _create_issue(client)
+    key = issue["key"]
+
+    # Find "Close" transition via v3
+    resp = await client.get(f"/rest/api/3/issue/{key}/transitions", headers=AUTH)
+    transitions = resp.json()["transitions"]
+    close_t = next(t for t in transitions if t["to"]["name"] == "Closed")
+
+    # Close with resolution "Obsolete" via v3
+    resp = await client.post(f"/rest/api/3/issue/{key}/transitions", json={
+        "transition": {"id": close_t["id"]},
+        "fields": {"resolution": {"name": "Obsolete"}},
+    }, headers=AUTH)
+    assert resp.status_code == 204
+
+    # Verify via v3
+    resp = await client.get(f"/rest/api/3/issue/{key}", headers=AUTH)
+    data = resp.json()["fields"]
+    assert data["status"]["name"] == "Closed"
+    assert data["resolution"]["name"] == "Obsolete"
+
+
+@pytest.mark.asyncio
+async def test_issue_split_link_via_v3(client):
+    """Creating an Issue split link works via v3 API."""
+    i1 = await _create_issue(client, summary="Parent RFE")
+    i2 = await _create_issue(client, summary="Child RFE")
+
+    resp = await client.post("/rest/api/3/issueLink", json={
+        "type": {"name": "Issue split"},
+        "inwardIssue": {"key": i1["key"]},
+        "outwardIssue": {"key": i2["key"]},
+    }, headers=AUTH)
+    assert resp.status_code == 201
+
+    # Verify link appears via v3
+    resp = await client.get(f"/rest/api/3/issue/{i1['key']}?fields=issuelinks", headers=AUTH)
+    links = resp.json()["fields"]["issuelinks"]
+    assert len(links) == 1
+    assert links[0]["type"]["name"] == "Issue split"
+
+
+@pytest.mark.asyncio
 async def test_transition_has_correct_structure(client):
     """Transition response has id, name, to fields."""
     issue = await _create_issue(client)
