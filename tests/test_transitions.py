@@ -82,6 +82,81 @@ async def test_transition_to_done_sets_resolution(client):
     assert data["fields"]["resolution"]["name"] == "Done"
 
 @pytest.mark.asyncio
+async def test_reopen_from_closed(client):
+    """Closing then reopening an issue clears resolution and restores active status."""
+    issue = await _create_issue(client)
+    key = issue["key"]
+
+    # Close the issue via the global "Close" transition
+    resp = await client.get(f"/rest/api/2/issue/{key}/transitions", headers=AUTH)
+    transitions = resp.json()["transitions"]
+    close_t = next(t for t in transitions if t["to"]["name"] == "Closed")
+    resp = await client.post(f"/rest/api/2/issue/{key}/transitions", json={
+        "transition": {"id": close_t["id"]}
+    }, headers=AUTH)
+    assert resp.status_code == 204
+
+    # Verify it's closed with resolution
+    resp = await client.get(f"/rest/api/2/issue/{key}", headers=AUTH)
+    data = resp.json()["fields"]
+    assert data["status"]["name"] == "Closed"
+    assert data["resolution"] is not None
+
+    # Reopen
+    resp = await client.get(f"/rest/api/2/issue/{key}/transitions", headers=AUTH)
+    transitions = resp.json()["transitions"]
+    reopen_t = next(t for t in transitions if t["name"] == "Reopen")
+    resp = await client.post(f"/rest/api/2/issue/{key}/transitions", json={
+        "transition": {"id": reopen_t["id"]}
+    }, headers=AUTH)
+    assert resp.status_code == 204
+
+    # Verify it's reopened: active status, resolution cleared
+    resp = await client.get(f"/rest/api/2/issue/{key}", headers=AUTH)
+    data = resp.json()["fields"]
+    assert data["status"]["name"] == "In Progress"
+    assert data["resolution"] is None
+
+
+@pytest.mark.asyncio
+async def test_reopen_from_done(client):
+    """An issue completed via Done can be reopened."""
+    issue = await _create_issue(client)
+    key = issue["key"]
+
+    # Walk: New -> To Do -> In Progress -> Code Review -> Testing -> Done
+    steps = ["Start", "Start Progress", "Submit for Review", "Start Testing", "Complete"]
+    for step_name in steps:
+        resp = await client.get(f"/rest/api/2/issue/{key}/transitions", headers=AUTH)
+        transitions = resp.json()["transitions"]
+        t = next(t for t in transitions if t["name"] == step_name)
+        resp = await client.post(f"/rest/api/2/issue/{key}/transitions", json={
+            "transition": {"id": t["id"]}
+        }, headers=AUTH)
+        assert resp.status_code == 204
+
+    # Verify Done
+    resp = await client.get(f"/rest/api/2/issue/{key}", headers=AUTH)
+    assert resp.json()["fields"]["status"]["name"] == "Done"
+    assert resp.json()["fields"]["resolution"]["name"] == "Done"
+
+    # Reopen from Done
+    resp = await client.get(f"/rest/api/2/issue/{key}/transitions", headers=AUTH)
+    transitions = resp.json()["transitions"]
+    reopen_t = next(t for t in transitions if t["name"] == "Reopen")
+    resp = await client.post(f"/rest/api/2/issue/{key}/transitions", json={
+        "transition": {"id": reopen_t["id"]}
+    }, headers=AUTH)
+    assert resp.status_code == 204
+
+    # Verify reopened
+    resp = await client.get(f"/rest/api/2/issue/{key}", headers=AUTH)
+    data = resp.json()["fields"]
+    assert data["status"]["name"] == "In Progress"
+    assert data["resolution"] is None
+
+
+@pytest.mark.asyncio
 async def test_transition_has_correct_structure(client):
     """Transition response has id, name, to fields."""
     issue = await _create_issue(client)

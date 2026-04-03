@@ -113,8 +113,10 @@ WORKFLOWS = {
         ("Review", "Reject", "Rejection Pending"),
         ("Pending Approval", "Approve", "Approved"),
         ("Pending Approval", "Reopen", "Review"),
+        ("Approved", "Reopen", "Review"),
         ("Rejection Pending", "Close", "Closed"),
         ("Rejection Pending", "Reopen", "Review"),
+        ("Closed", "Reopen", "Review"),
         (None, "Close", "Closed"),  # global transition
     ],
     "RHAISTRAT Workflow": [
@@ -123,6 +125,8 @@ WORKFLOWS = {
         ("In Progress", "Submit for Review", "Review"),
         ("Review", "Complete", "Done"),
         ("Review", "Reopen", "In Progress"),
+        ("Done", "Reopen", "In Progress"),
+        ("Closed", "Reopen", "In Progress"),
         (None, "Close", "Closed"),
     ],
     "Default Workflow": [
@@ -134,6 +138,8 @@ WORKFLOWS = {
         ("Code Review", "Reopen", "In Progress"),
         ("Testing", "Complete", "Done"),
         ("Testing", "Reopen", "In Progress"),
+        ("Done", "Reopen", "In Progress"),
+        ("Closed", "Reopen", "In Progress"),
         (None, "Close", "Closed"),
     ],
 }
