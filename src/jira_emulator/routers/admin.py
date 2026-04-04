@@ -1,6 +1,8 @@
-"""Admin endpoints: /api/admin/import, /api/admin/reset."""
+"""Admin endpoints: /api/admin/import, /api/admin/reset, /api/admin/snapshots."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jira_emulator.auth.middleware import get_current_user
@@ -9,6 +11,13 @@ from jira_emulator.models.user import User
 from jira_emulator.schemas.admin import ImportRequest, ImportResponse
 from jira_emulator.services.import_service import import_issues
 from jira_emulator.services.seed_service import load_seed_data
+from jira_emulator.services.snapshot_service import (
+    is_snapshot_enabled,
+    list_snapshots,
+    create_snapshot,
+    restore_snapshot,
+    delete_snapshot,
+)
 
 router = APIRouter(prefix="/api/admin")
 
@@ -45,3 +54,59 @@ async def reset_database(
         await load_seed_data(session)
 
     return {"message": "Database reset successfully"}
+
+
+# ---- Snapshot endpoints ----
+
+
+class SnapshotCreateBody(BaseModel):
+    label: str | None = None
+
+
+def _check_snapshots_enabled():
+    if not is_snapshot_enabled():
+        raise HTTPException(
+            status_code=501,
+            detail="Snapshots are only available inside the container.",
+        )
+
+
+@router.get("/snapshots")
+async def get_snapshots(current_user: User = Depends(get_current_user)):
+    """List available snapshots."""
+    _check_snapshots_enabled()
+    return {"enabled": True, "snapshots": list_snapshots()}
+
+
+@router.post("/snapshots", status_code=201)
+async def post_snapshot(
+    body: SnapshotCreateBody | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Create a new database snapshot."""
+    _check_snapshots_enabled()
+    label = body.label if body else None
+    info = create_snapshot(label)
+    return info
+
+
+@router.post("/snapshots/{name}/restore")
+async def post_restore(name: str, current_user: User = Depends(get_current_user)):
+    """Restore a snapshot (restarts the API process)."""
+    _check_snapshots_enabled()
+    try:
+        restore_snapshot(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"message": "Restoring from snapshot. Server is restarting..."}
+
+
+@router.delete("/snapshots/{name}", status_code=204)
+async def delete_snap(name: str, current_user: User = Depends(get_current_user)):
+    """Delete a snapshot."""
+    _check_snapshots_enabled()
+    try:
+        delete_snapshot(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return Response(status_code=204)

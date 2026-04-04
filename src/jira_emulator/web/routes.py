@@ -25,6 +25,13 @@ from jira_emulator.models.priority import Priority
 from jira_emulator.adf import is_adf, adf_to_markdown
 from jira_emulator.services import issue_service, search_service, history_service
 from jira_emulator.services.user_service import get_or_create_user
+from jira_emulator.services.snapshot_service import (
+    is_snapshot_enabled,
+    list_snapshots,
+    create_snapshot,
+    restore_snapshot,
+    delete_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -284,17 +291,67 @@ async def issue_detail(request: Request, key: str, db: AsyncSession = Depends(ge
 @router.get("/admin/import", response_class=HTMLResponse)
 async def admin_import_form(request: Request):
     """Render the JSON import upload form."""
+    snapshots_enabled = is_snapshot_enabled()
+    snapshots = list_snapshots() if snapshots_enabled else []
     return templates.TemplateResponse(
         request=request,
         name="admin_import.html",
         context={
             "version": __version__,
+            "snapshots_enabled": snapshots_enabled,
+            "snapshots": snapshots,
         },
     )
 
 
 # ---------------------------------------------------------------------------
-# POST /admin/import — Handle import upload
+# POST /admin/backup — Create a database snapshot
+# ---------------------------------------------------------------------------
+@router.post("/admin/backup")
+async def admin_backup(request: Request, label: str = Form("")):
+    """Create a database snapshot and redirect back to admin."""
+    create_snapshot(label if label else None)
+    return RedirectResponse(url="/admin/import", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/restore/{name} — Restore a database snapshot
+# ---------------------------------------------------------------------------
+@router.post("/admin/restore/{name}")
+async def admin_restore(name: str, request: Request):
+    """Restore a snapshot and show a restart message."""
+    try:
+        restore_snapshot(name)
+    except ValueError as exc:
+        return HTMLResponse(f"<h1>Error</h1><p>{exc}</p>", status_code=404)
+    return HTMLResponse(
+        """<!DOCTYPE html>
+<html><head><title>Restoring...</title>
+<style>body{font-family:sans-serif;text-align:center;padding-top:80px;}</style>
+</head><body>
+<h1>Restoring from snapshot...</h1>
+<p>The server is restarting. You will be redirected shortly.</p>
+<script>setTimeout(function(){location.href='/admin/import';},3000);</script>
+</body></html>""",
+        status_code=200,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/snapshot/{name}/delete — Delete a snapshot
+# ---------------------------------------------------------------------------
+@router.post("/admin/snapshot/{name}/delete")
+async def admin_snapshot_delete(name: str, request: Request):
+    """Delete a snapshot and redirect back to admin."""
+    try:
+        delete_snapshot(name)
+    except ValueError:
+        pass
+    return RedirectResponse(url="/admin/import", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/reset — Reset database
 # ---------------------------------------------------------------------------
 @router.post("/admin/reset")
 async def admin_reset(request: Request):
@@ -337,6 +394,7 @@ async def admin_import_upload(
 
         result = await import_issues(db, data)
 
+        snap_enabled = is_snapshot_enabled()
         return templates.TemplateResponse(
             request=request,
             name="admin_import.html",
@@ -349,9 +407,12 @@ async def admin_import_upload(
                     "users_created": result.users_created,
                 },
                 "version": __version__,
+                "snapshots_enabled": snap_enabled,
+                "snapshots": list_snapshots() if snap_enabled else [],
             },
         )
     except json.JSONDecodeError as exc:
+        snap_enabled = is_snapshot_enabled()
         return templates.TemplateResponse(
             request=request,
             name="admin_import.html",
@@ -364,10 +425,13 @@ async def admin_import_upload(
                     "users_created": [],
                 },
                 "version": __version__,
+                "snapshots_enabled": snap_enabled,
+                "snapshots": list_snapshots() if snap_enabled else [],
             },
         )
     except Exception as exc:
         logger.exception("Import failed")
+        snap_enabled = is_snapshot_enabled()
         return templates.TemplateResponse(
             request=request,
             name="admin_import.html",
@@ -380,6 +444,8 @@ async def admin_import_upload(
                     "users_created": [],
                 },
                 "version": __version__,
+                "snapshots_enabled": snap_enabled,
+                "snapshots": list_snapshots() if snap_enabled else [],
             },
         )
 

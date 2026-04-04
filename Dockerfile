@@ -26,6 +26,8 @@ COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Create data directory for SQLite database
 RUN mkdir -p /data && chown appuser:appuser /data
+RUN mkdir -p /data/snapshots && chown appuser:appuser /data/snapshots
+RUN touch /etc/jira-emulator-container
 
 # Environment variables
 ENV DATABASE_URL=sqlite+aiosqlite:////data/jira.db \
