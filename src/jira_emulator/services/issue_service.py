@@ -310,8 +310,11 @@ async def create_issue(
     await db.flush()  # get issue.id
 
     # -- labels --
+    seen_labels: set[str] = set()
     for label_text in fields.get("labels", []):
-        db.add(Label(issue_id=issue.id, label=label_text))
+        if label_text not in seen_labels:
+            db.add(Label(issue_id=issue.id, label=label_text))
+            seen_labels.add(label_text)
 
     # -- components --
     for comp_data in fields.get("components", []):
@@ -564,8 +567,11 @@ async def _apply_field_updates(
         for lbl in list(issue.labels):
             await db.delete(lbl)
         await db.flush()
+        seen = set()
         for label_text in fields["labels"]:
-            db.add(Label(issue_id=issue.id, label=label_text))
+            if label_text not in seen:
+                db.add(Label(issue_id=issue.id, label=label_text))
+                seen.add(label_text)
         if old_labels != new_labels:
             await history_service.record_change(
                 db, issue.id, author_id, "labels",
@@ -696,7 +702,9 @@ async def _apply_update_ops(
         old_labels = sorted(lbl.label for lbl in issue.labels)
         for op in update_ops["labels"]:
             if "add" in op:
-                db.add(Label(issue_id=issue.id, label=op["add"]))
+                existing = {lbl.label for lbl in issue.labels}
+                if op["add"] not in existing:
+                    db.add(Label(issue_id=issue.id, label=op["add"]))
             elif "remove" in op:
                 for lbl in list(issue.labels):
                     if lbl.label == op["remove"]:
@@ -705,8 +713,11 @@ async def _apply_update_ops(
                 for lbl in list(issue.labels):
                     await db.delete(lbl)
                 await db.flush()
+                seen = set()
                 for label_text in op["set"]:
-                    db.add(Label(issue_id=issue.id, label=label_text))
+                    if label_text not in seen:
+                        db.add(Label(issue_id=issue.id, label=label_text))
+                        seen.add(label_text)
         await db.flush()
         # Re-query to get current labels after ops
         result = await db.execute(
