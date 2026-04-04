@@ -16,7 +16,6 @@ run: build
 		--name $(CONTAINER_NAME) \
 		-p $(PORT):8080 \
 		-p $(MCP_PORT):8081 \
-		-v jira-emulator-data:/data \
 		$(IMAGE_NAME)
 	@echo "Jira Emulator API: http://localhost:$(PORT)"
 	@echo "Jira MCP server:   http://localhost:$(MCP_PORT)/sse"
