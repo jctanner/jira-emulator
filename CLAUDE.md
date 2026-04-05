@@ -19,15 +19,19 @@ A lightweight Jira REST API emulator built with Python/FastAPI and SQLite. Desig
 
 ## Common Commands
 
+**Always use the Makefile targets** — they handle `uv run`, correct env vars, and container orchestration. Do not invoke `pytest`, `uvicorn`, or container commands directly.
+
 ```bash
+make test           # Run pytest suite: uv run pytest tests/ -x -q
 make serve          # Start dev server with auto-reload (port 8080)
-make test           # Run pytest suite (pytest tests/ -x -q)
 make serve-mcp      # Start MCP server (port 8081)
 make serve-all      # Start both API and MCP servers
 make run            # Build and run container (podman, port 8080)
 make stop           # Stop container
+make restart        # Stop + run
 make logs           # Follow container logs
-make clean          # Remove container and data volume
+make status         # Show container status
+make clean          # Remove container, image, and data volume
 ```
 
 ## Project Layout
