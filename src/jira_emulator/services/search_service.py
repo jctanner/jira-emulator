@@ -6,6 +6,8 @@ Jira-compatible search response dict.
 
 from __future__ import annotations
 
+import base64
+
 from sqlalchemy import select, func as sa_func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +16,19 @@ from jira_emulator.models.user import User
 from jira_emulator.jql.parser import parse_jql
 from jira_emulator.jql.transformer import JQLTransformer
 from jira_emulator.services import issue_service
+
+
+def encode_page_token(offset: int) -> str:
+    """Encode an offset into an opaque nextPageToken."""
+    return base64.b64encode(str(offset).encode()).decode()
+
+
+def decode_page_token(token: str) -> int:
+    """Decode a nextPageToken back into an offset."""
+    try:
+        return int(base64.b64decode(token).decode())
+    except (ValueError, Exception):
+        raise ValueError(f"Invalid nextPageToken: {token}")
 
 
 async def search_issues(
@@ -25,6 +40,7 @@ async def search_issues(
     current_user: User | None = None,
     base_url: str = "",
     api_version: int = 2,
+    next_page_token: str | None = None,
 ) -> dict:
     """Execute a JQL search and return a Jira REST-style response dict.
 
@@ -68,6 +84,10 @@ async def search_issues(
     max_results = min(max_results, 1000)
     if max_results < 0:
         max_results = 50
+
+    # For v3, decode nextPageToken to get the offset
+    if next_page_token is not None:
+        start_at = decode_page_token(next_page_token)
 
     current_username = current_user.username if current_user else None
 
@@ -113,6 +133,20 @@ async def search_issues(
             api_version=api_version,
         )
         formatted_issues.append(formatted)
+
+    if api_version == 3:
+        next_offset = start_at + len(formatted_issues)
+        is_last = next_offset >= total
+        response = {
+            "expand": "schema,names",
+            "maxResults": max_results,
+            "total": total,
+            "isLast": is_last,
+            "issues": formatted_issues,
+        }
+        if not is_last:
+            response["nextPageToken"] = encode_page_token(next_offset)
+        return response
 
     return {
         "expand": "schema,names",

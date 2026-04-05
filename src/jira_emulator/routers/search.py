@@ -22,14 +22,19 @@ def _get_api_version(request: Request) -> int:
 
 
 @router.post("/search")
+@router.post("/search/jql")
 async def search_issues_post(
     body: SearchRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Search for issues via JQL (POST)."""
+    """Search for issues via JQL (POST).
+
+    Also mounted at ``/search/jql`` for Jira Cloud v3 clients.
+    """
     settings = get_settings()
+    api_version = _get_api_version(request)
     try:
         return await search_service.search_issues(
             db,
@@ -39,7 +44,8 @@ async def search_issues_post(
             fields_filter=body.fields,
             current_user=current_user,
             base_url=settings.BASE_URL,
-            api_version=_get_api_version(request),
+            api_version=api_version,
+            next_page_token=body.nextPageToken if api_version == 3 else None,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -56,6 +62,7 @@ async def search_issues_get(
     startAt: int = Query(default=0),
     maxResults: int = Query(default=50),
     fields: str | None = Query(default=None),
+    nextPageToken: str | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -65,6 +72,7 @@ async def search_issues_get(
     use ``GET /rest/api/3/search/jql`` (rewritten to v2 by middleware).
     """
     settings = get_settings()
+    api_version = _get_api_version(request)
 
     fields_filter = None
     if fields:
@@ -79,7 +87,8 @@ async def search_issues_get(
             fields_filter=fields_filter,
             current_user=current_user,
             base_url=settings.BASE_URL,
-            api_version=_get_api_version(request),
+            api_version=api_version,
+            next_page_token=nextPageToken if api_version == 3 else None,
         )
     except ValueError as exc:
         raise HTTPException(

@@ -141,3 +141,161 @@ async def test_search_get_pagination(client: httpx.AsyncClient):
     assert data["startAt"] == 1
     assert data["maxResults"] == 2
     assert len(data["issues"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# v3 search endpoints — nextPageToken cursor pagination
+# ---------------------------------------------------------------------------
+
+
+async def test_v3_search_post_returns_cursor_pagination(client: httpx.AsyncClient):
+    """POST /rest/api/3/search returns nextPageToken/isLast instead of startAt."""
+    await _create_issues(client, count=3)
+
+    resp = await client.post(
+        "/rest/api/3/search",
+        json={"jql": "project = RHOAIENG", "maxResults": 2},
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 200
+
+    data = resp.json()
+    assert data["total"] == 3
+    assert data["isLast"] is False
+    assert "nextPageToken" in data
+    # v3 should NOT have startAt
+    assert "startAt" not in data
+    assert len(data["issues"]) == 2
+
+
+async def test_v3_search_post_last_page(client: httpx.AsyncClient):
+    """POST /rest/api/3/search last page has isLast=True and no nextPageToken."""
+    await _create_issues(client, count=2)
+
+    resp = await client.post(
+        "/rest/api/3/search",
+        json={"jql": "project = RHOAIENG", "maxResults": 50},
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 200
+
+    data = resp.json()
+    assert data["total"] == 2
+    assert data["isLast"] is True
+    assert "nextPageToken" not in data
+
+
+async def test_v3_search_post_walk_all_pages(client: httpx.AsyncClient):
+    """Walk all pages using nextPageToken via POST /rest/api/3/search."""
+    await _create_issues(client, count=5)
+
+    all_keys: set[str] = set()
+    token = None
+
+    for _ in range(10):  # safety limit
+        body: dict = {"jql": "project = RHOAIENG", "maxResults": 2}
+        if token:
+            body["nextPageToken"] = token
+
+        resp = await client.post(
+            "/rest/api/3/search",
+            json=body,
+            headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+
+        for issue in data["issues"]:
+            all_keys.add(issue["key"])
+
+        if data["isLast"]:
+            assert "nextPageToken" not in data
+            break
+        token = data["nextPageToken"]
+
+    assert len(all_keys) == 5
+
+
+async def test_v3_search_jql_post(client: httpx.AsyncClient):
+    """POST /rest/api/3/search/jql works with cursor pagination."""
+    await _create_issues(client, count=3)
+
+    resp = await client.post(
+        "/rest/api/3/search/jql",
+        json={"jql": "project = RHOAIENG", "maxResults": 2},
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 200
+
+    data = resp.json()
+    assert data["total"] == 3
+    assert data["isLast"] is False
+    assert "nextPageToken" in data
+    assert "startAt" not in data
+    assert len(data["issues"]) == 2
+
+    # Use token for next page
+    resp2 = await client.post(
+        "/rest/api/3/search/jql",
+        json={
+            "jql": "project = RHOAIENG",
+            "maxResults": 2,
+            "nextPageToken": data["nextPageToken"],
+        },
+        headers=AUTH_HEADER,
+    )
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    assert data2["isLast"] is True
+    assert len(data2["issues"]) == 1
+
+
+async def test_v3_search_jql_get(client: httpx.AsyncClient):
+    """GET /rest/api/3/search/jql works with nextPageToken query param."""
+    await _create_issues(client, count=3)
+
+    resp = await client.get(
+        "/rest/api/3/search/jql",
+        params={"jql": "project = RHOAIENG", "maxResults": "2"},
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 200
+
+    data = resp.json()
+    assert data["total"] == 3
+    assert data["isLast"] is False
+    assert "nextPageToken" in data
+    assert "startAt" not in data
+
+    # Follow the token
+    resp2 = await client.get(
+        "/rest/api/3/search/jql",
+        params={
+            "jql": "project = RHOAIENG",
+            "maxResults": "2",
+            "nextPageToken": data["nextPageToken"],
+        },
+        headers=AUTH_HEADER,
+    )
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    assert data2["isLast"] is True
+    assert len(data2["issues"]) == 1
+
+
+async def test_v2_search_unaffected_by_v3_changes(client: httpx.AsyncClient):
+    """v2 endpoints still return startAt/maxResults, never nextPageToken."""
+    await _create_issues(client, count=3)
+
+    resp = await client.post(
+        "/rest/api/2/search",
+        json={"jql": "project = RHOAIENG", "maxResults": 2},
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 200
+
+    data = resp.json()
+    assert "startAt" in data
+    assert "maxResults" in data
+    assert "nextPageToken" not in data
+    assert "isLast" not in data

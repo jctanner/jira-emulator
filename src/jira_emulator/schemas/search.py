@@ -6,12 +6,13 @@ from pydantic import BaseModel, Field
 
 
 class SearchRequest(BaseModel):
-    """POST /rest/api/2/search body."""
+    """POST /rest/api/2/search and /rest/api/3/search/jql body."""
 
     jql: str
     startAt: int = 0
     maxResults: int = 50
     fields: list[str] | None = None
+    nextPageToken: str | None = None
 
 
 class SearchResponse(BaseModel):

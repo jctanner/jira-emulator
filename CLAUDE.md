@@ -94,8 +94,11 @@ Snapshots are stored in the persistent `/data` volume when running in a containe
 
 - **DateTime format**: ISO 8601 with milliseconds: `2026-04-02T14:47:28.592+0000`
 - **Issue keys**: Per-project auto-incrementing sequence (e.g., `RHAIRFE-1`, `RHAIRFE-2`)
-- **API versioning**: Both v2 and v3 are first-class; v3 requests are rewritten to v2 endpoints internally (single code path), but both must be tested independently
-- **Pagination**: v2 uses `startAt` (0-indexed) + `maxResults` (default 50); v3 uses `nextPageToken` cursor-based pagination (see `references/jira-api-deprecation-notes.md`)
+- **API versioning**: Both v2 and v3 are first-class. v3 requests are rewritten to v2 endpoints internally via middleware (`app.py`), with `request.state.api_version` used to branch response format where they differ (e.g., pagination, ADF). Both must be tested independently.
+- **Pagination**: v2 uses `startAt` (0-indexed) + `maxResults` (default 50). v3 uses `nextPageToken` (opaque base64 cursor) + `maxResults` + `isLast`. The v3 response omits `startAt` and includes `nextPageToken` only when more results exist.
+- **Search endpoints**: All combinations are implemented:
+  - v2: `GET /search`, `POST /search`, `GET /search/jql`, `POST /search/jql` — offset pagination
+  - v3: same paths via `/rest/api/3/` — cursor pagination (`nextPageToken`/`isLast`)
 - **Seed projects**: RHOAIENG, RHAIRFE, RHAISTRAT, TEST with standard workflows
 
 ## References
