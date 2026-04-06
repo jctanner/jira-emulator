@@ -1,18 +1,21 @@
 # Jira Emulator
 
-A lightweight Jira REST API v2 emulator for offline development and testing. Runs entirely on SQLite — no external services required.
+A lightweight Jira REST API emulator supporting both **v2** (Server/DC) and **v3** (Cloud) for offline development and testing. Runs entirely on SQLite — no external services required.
 
-Built for use with tools like [jira-python](https://github.com/pycontribs/jira) and other Jira API clients that need a local target for integration testing, CI pipelines, or offline development.
+Built for use with tools like [jira-python](https://github.com/pycontribs/jira) and other Jira API clients that need a local target for integration testing, CI pipelines, or offline development. Also includes an MCP (Model Context Protocol) server for Claude AI integration.
 
 ## Features
 
-- **REST API v2** — Issues, projects, search, comments, transitions, watchers, issue links, users, fields, and metadata endpoints
+- **REST API v2 + v3** — Issues, projects, search, comments, transitions, watchers, issue links, attachments, users, fields, and metadata endpoints. v3 requests are supported with proper ADF formatting and cursor-based pagination.
 - **JQL Search** — Lark-based parser supporting `AND`/`OR`, `IN`, `NOT IN`, `IS EMPTY`, `~` text search, `ORDER BY`, date functions (`now()`, `startOfDay()`, etc.), custom fields, and `statusCategory`
-- **Workflow Engine** — Configurable workflows with status transitions, auto-resolution on done, and per-project/issue-type mapping
+- **Workflow Engine** — Configurable workflows with status transitions, auto-resolution on done, reopen transitions, and per-project/issue-type mapping
 - **Authentication** — Three modes: `permissive` (default, accepts anything), `strict` (validates passwords and tokens), `none` (no auth required). Supports Basic auth, Bearer tokens (PATs), and session cookies.
+- **File Attachments** — Upload, download, and delete file attachments on issues. Supports `X-Atlassian-Token: no-check` header.
 - **JSON Import** — Import real Jira JSON exports via CLI, HTTP API, or file upload. Auto-creates projects, users, statuses, and other entities on the fly.
+- **Database Snapshots** — Backup and restore database state via the admin API. Useful for test isolation.
+- **MCP Server** — Model Context Protocol server for Claude AI integration with tools for searching, creating, updating, and transitioning issues.
 - **Web UI** — Browse projects, issues, and run JQL queries from your browser. Built with Pico CSS.
-- **Container Ready** — Dockerfile included. `make run` builds and starts a container.
+- **Container Ready** — Dockerfile included. `make run` builds and starts a container with persistent storage.
 
 ## Quick Start
 
@@ -48,6 +51,18 @@ make logs
 make stop
 ```
 
+### Run with MCP server
+
+```bash
+# Start both API and MCP servers
+make serve-all
+
+# Or start the MCP server separately (requires API server running)
+make serve-mcp
+```
+
+The MCP server runs on port 8081 and provides Claude AI with tools for issue search, creation, updates, and transitions.
+
 ### Run tests
 
 ```bash
@@ -75,10 +90,15 @@ curl -u admin:admin -X POST http://localhost:8080/rest/api/2/issue \
     }
   }'
 
-# Search with JQL
+# Search with JQL (v2 — offset pagination)
 curl -u admin:admin -X POST http://localhost:8080/rest/api/2/search \
   -H 'Content-Type: application/json' \
   -d '{"jql": "project = RHAIRFE ORDER BY created DESC"}'
+
+# Search with JQL (v3 — cursor pagination with nextPageToken)
+curl -u admin:admin -X POST http://localhost:8080/rest/api/3/search/jql \
+  -H 'Content-Type: application/json' \
+  -d '{"jql": "project = RHAIRFE", "maxResults": 10}'
 
 # Get an issue
 curl -u admin:admin http://localhost:8080/rest/api/2/issue/RHAIRFE-1
@@ -150,8 +170,11 @@ All settings are configured via environment variables:
 | `LOG_LEVEL` | `INFO` | Python logging level |
 | `IMPORT_ON_STARTUP` | `false` | Import JSON files from `IMPORT_DIR` on startup |
 | `IMPORT_DIR` | `/data/import` | Directory to scan for JSON imports |
+| `ATTACHMENT_DIR` | `/data/attachments` | Directory for uploaded file attachments |
 
 ## API Coverage
+
+All endpoints below are available under both `/rest/api/2/` and `/rest/api/3/`. The v3 variants use ADF for rich-text fields and cursor-based pagination (`nextPageToken`) for search.
 
 ### Endpoints
 
@@ -162,7 +185,13 @@ All settings are configured via environment variables:
 | `/rest/api/2/issue/{id}/comment` | GET, POST | Comments |
 | `/rest/api/2/issue/{id}/transitions` | GET, POST | Workflow transitions |
 | `/rest/api/2/issue/{id}/watchers` | GET, POST, DELETE | Watchers |
-| `/rest/api/2/search` | GET, POST | JQL search |
+| `/rest/api/2/issue/{id}/attachments` | POST | Upload attachments |
+| `/rest/api/2/issue/createmeta` | GET | Issue creation metadata |
+| `/rest/api/2/attachment/{id}` | GET, DELETE | Attachment metadata / delete |
+| `/rest/api/2/attachment/content/{id}` | GET | Download attachment |
+| `/rest/api/2/attachment/meta` | GET | Attachment settings |
+| `/rest/api/2/search` | GET, POST | JQL search (v2: offset pagination) |
+| `/rest/api/2/search/jql` | GET, POST | JQL search (v3: cursor pagination) |
 | `/rest/api/2/project` | GET | List projects |
 | `/rest/api/2/project/{id}` | GET | Get project |
 | `/rest/api/2/field` | GET | List fields |
@@ -182,6 +211,8 @@ All settings are configured via environment variables:
 | `/rest/pat/latest/tokens` | POST, GET | PAT management |
 | `/rest/pat/latest/tokens/{id}` | DELETE | Revoke PAT |
 | `/api/admin/import` | POST | Bulk import |
+| `/api/admin/snapshots` | GET, POST | List / create database snapshots |
+| `/api/admin/snapshots/{id}/restore` | POST | Restore database snapshot |
 
 ### JQL Support
 
@@ -195,17 +226,23 @@ Functions: `currentUser()`, `now()`, `startOfDay()`, `endOfDay()`, `startOfWeek(
 
 ```
 src/jira_emulator/
-├── app.py              # FastAPI application factory
+├── app.py              # FastAPI application factory, v3 rewrite middleware
 ├── config.py           # Environment-based configuration
 ├── database.py         # Async SQLAlchemy engine + sessions
+├── adf.py              # Atlassian Document Format serialization
 ├── exceptions.py       # Custom exception hierarchy
 ├── auth/               # Authentication middleware
 ├── jql/                # JQL parser (Lark grammar + transformer)
-├── models/             # SQLAlchemy ORM models (18 models)
+├── models/             # SQLAlchemy ORM models (~21 tables)
 ├── routers/            # FastAPI route handlers
 ├── schemas/            # Pydantic request/response models
 ├── services/           # Business logic layer
 └── web/                # Web UI (Jinja2 templates)
+
+mcp_servers/
+└── atlassian_jira.py   # FastMCP server for Claude AI integration
+
+tests/                  # pytest test suite (~135 tests)
 ```
 
 ## License
