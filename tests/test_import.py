@@ -1,5 +1,9 @@
 import json
 import os
+import tarfile
+import tempfile
+import zipfile
+from pathlib import Path
 import pytest
 import httpx
 
@@ -392,3 +396,252 @@ async def test_api_import_searchable_via_jql(client):
         "maxResults": 50,
     }, headers=AUTH)
     assert resp2.json()["total"] == 3
+
+
+# --- Archive import tests ---
+
+
+def _create_test_archive(archive_type: str, issues: list[dict]) -> str:
+    """Create a temporary archive (.zip or .tar.gz) with JSON files.
+
+    Returns the path to the temporary archive file.
+    """
+    temp_dir = tempfile.mkdtemp()
+
+    # Create nested directory structure with JSON files
+    data_dir = Path(temp_dir) / "data"
+    data_dir.mkdir()
+
+    subdir = data_dir / "nested"
+    subdir.mkdir()
+
+    # Write some issues to root level
+    if len(issues) > 0:
+        with open(data_dir / "issues1.json", "w") as f:
+            json.dump(issues[:len(issues)//2] if len(issues) > 1 else issues, f)
+
+    # Write some issues to nested directory
+    if len(issues) > 1:
+        with open(subdir / "issues2.json", "w") as f:
+            json.dump(issues[len(issues)//2:], f)
+
+    # Create the archive
+    if archive_type == "zip":
+        archive_path = os.path.join(temp_dir, "test.zip")
+        with zipfile.ZipFile(archive_path, "w") as zf:
+            for json_file in data_dir.rglob("*.json"):
+                arcname = json_file.relative_to(temp_dir)
+                zf.write(json_file, arcname=arcname)
+    elif archive_type == "tar.gz":
+        archive_path = os.path.join(temp_dir, "test.tar.gz")
+        with tarfile.open(archive_path, "w:gz") as tf:
+            tf.add(data_dir, arcname="data")
+    else:
+        raise ValueError(f"Unsupported archive type: {archive_type}")
+
+    return archive_path
+
+
+@pytest.mark.asyncio
+async def test_api_import_zip_archive(client):
+    """POST /api/admin/import/file with a .zip archive imports all JSON files."""
+    issues = [
+        {
+            "key": "ZIPTEST-1",
+            "summary": "Issue from zip 1",
+            "status": "New",
+            "priority": "Major",
+            "issue_type": "Bug",
+            "reporter": "Test User",
+            "project": {"key": "ZIPTEST", "name": "Zip Test Project"},
+            "labels": [],
+            "components": [],
+            "affects_versions": [],
+            "fix_versions": [],
+        },
+        {
+            "key": "ZIPTEST-2",
+            "summary": "Issue from zip 2",
+            "status": "New",
+            "priority": "Major",
+            "issue_type": "Bug",
+            "reporter": "Test User",
+            "project": {"key": "ZIPTEST", "name": "Zip Test Project"},
+            "labels": [],
+            "components": [],
+            "affects_versions": [],
+            "fix_versions": [],
+        },
+    ]
+
+    archive_path = _create_test_archive("zip", issues)
+
+    try:
+        with open(archive_path, "rb") as f:
+            resp = await client.post(
+                "/api/admin/import/file",
+                headers=AUTH,
+                files={"file": ("test.zip", f, "application/zip")},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["imported"] == 2
+        assert "ZIPTEST" in data["projects_created"]
+
+        # Verify issues exist
+        issue_resp = await client.get("/rest/api/2/issue/ZIPTEST-1", headers=AUTH)
+        assert issue_resp.status_code == 200
+        assert issue_resp.json()["fields"]["summary"] == "Issue from zip 1"
+    finally:
+        # Clean up
+        if os.path.exists(archive_path):
+            os.remove(archive_path)
+
+
+@pytest.mark.asyncio
+async def test_api_import_targz_archive(client):
+    """POST /api/admin/import/file with a .tar.gz archive imports all JSON files."""
+    issues = [
+        {
+            "key": "TARTEST-1",
+            "summary": "Issue from tar.gz 1",
+            "status": "New",
+            "priority": "Major",
+            "issue_type": "Bug",
+            "reporter": "Test User",
+            "project": {"key": "TARTEST", "name": "Tar Test Project"},
+            "labels": [],
+            "components": [],
+            "affects_versions": [],
+            "fix_versions": [],
+        },
+        {
+            "key": "TARTEST-2",
+            "summary": "Issue from tar.gz 2",
+            "status": "New",
+            "priority": "Major",
+            "issue_type": "Bug",
+            "reporter": "Test User",
+            "project": {"key": "TARTEST", "name": "Tar Test Project"},
+            "labels": [],
+            "components": [],
+            "affects_versions": [],
+            "fix_versions": [],
+        },
+    ]
+
+    archive_path = _create_test_archive("tar.gz", issues)
+
+    try:
+        with open(archive_path, "rb") as f:
+            resp = await client.post(
+                "/api/admin/import/file",
+                headers=AUTH,
+                files={"file": ("test.tar.gz", f, "application/gzip")},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["imported"] == 2
+        assert "TARTEST" in data["projects_created"]
+
+        # Verify issues exist
+        issue_resp = await client.get("/rest/api/2/issue/TARTEST-1", headers=AUTH)
+        assert issue_resp.status_code == 200
+        assert issue_resp.json()["fields"]["summary"] == "Issue from tar.gz 1"
+    finally:
+        # Clean up
+        if os.path.exists(archive_path):
+            os.remove(archive_path)
+
+
+@pytest.mark.asyncio
+async def test_api_import_archive_recursive_search(client):
+    """Archive import recursively finds JSON files in subdirectories."""
+    issues = [
+        {
+            "key": "RECTEST-1",
+            "summary": "Root level issue",
+            "status": "New",
+            "priority": "Major",
+            "issue_type": "Bug",
+            "reporter": "Test User",
+            "project": {"key": "RECTEST", "name": "Recursive Test Project"},
+            "labels": [],
+            "components": [],
+            "affects_versions": [],
+            "fix_versions": [],
+        },
+        {
+            "key": "RECTEST-2",
+            "summary": "Nested directory issue",
+            "status": "New",
+            "priority": "Major",
+            "issue_type": "Bug",
+            "reporter": "Test User",
+            "project": {"key": "RECTEST", "name": "Recursive Test Project"},
+            "labels": [],
+            "components": [],
+            "affects_versions": [],
+            "fix_versions": [],
+        },
+    ]
+
+    archive_path = _create_test_archive("zip", issues)
+
+    try:
+        with open(archive_path, "rb") as f:
+            resp = await client.post(
+                "/api/admin/import/file",
+                headers=AUTH,
+                files={"file": ("recursive.zip", f, "application/zip")},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # Both issues should be found despite being in different directories
+        assert data["imported"] == 2
+    finally:
+        if os.path.exists(archive_path):
+            os.remove(archive_path)
+
+
+@pytest.mark.asyncio
+async def test_api_import_json_file(client):
+    """POST /api/admin/import/file with a plain JSON file works."""
+    issues = [
+        {
+            "key": "JSONFILE-1",
+            "summary": "Issue from JSON file",
+            "status": "New",
+            "priority": "Major",
+            "issue_type": "Bug",
+            "reporter": "Test User",
+            "project": {"key": "JSONFILE", "name": "JSON File Project"},
+            "labels": [],
+            "components": [],
+            "affects_versions": [],
+            "fix_versions": [],
+        },
+    ]
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(issues, f)
+        json_path = f.name
+
+    try:
+        with open(json_path, "rb") as f:
+            resp = await client.post(
+                "/api/admin/import/file",
+                headers=AUTH,
+                files={"file": ("test.json", f, "application/json")},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["imported"] == 1
+        assert "JSONFILE" in data["projects_created"]
+    finally:
+        if os.path.exists(json_path):
+            os.remove(json_path)

@@ -2,6 +2,9 @@
 
 import json
 import logging
+import tarfile
+import tempfile
+import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -618,6 +621,72 @@ async def import_directory(db: AsyncSession, dir_path: str) -> ImportResult:
             errors.append(f"{json_file}: {exc}")
 
     logger.info("Collected %d issues from %s", len(all_issues), directory)
+
+    result = await import_issues(db, all_issues)
+    result.errors.extend(errors)
+    return result
+
+
+def _find_json_files_recursive(directory: Path) -> list[Path]:
+    """Recursively find all .json files in a directory tree."""
+    return sorted(directory.rglob("*.json"))
+
+
+async def import_archive(db: AsyncSession, archive_path: str) -> ImportResult:
+    """Extract a .tar.gz or .zip archive and import all JSON files found within.
+
+    The archive is extracted to a temporary directory, all .json files are
+    recursively collected, and then imported as a batch.
+    """
+    archive_file = Path(archive_path)
+    logger.info("Importing from archive: %s", archive_file)
+
+    all_issues: list[dict] = []
+    errors: list[str] = []
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Extract the archive
+        try:
+            if archive_file.suffix == ".zip":
+                with zipfile.ZipFile(archive_file, "r") as zf:
+                    zf.extractall(temp_path)
+            elif archive_file.name.endswith(".tar.gz") or archive_file.suffix in {".tgz", ".tar"}:
+                with tarfile.open(archive_file, "r:*") as tf:
+                    tf.extractall(temp_path)
+            else:
+                result = ImportResult()
+                result.errors.append(
+                    f"{archive_path}: unsupported archive format (expected .zip, .tar.gz, .tgz, or .tar)"
+                )
+                return result
+        except Exception as exc:
+            result = ImportResult()
+            result.errors.append(f"{archive_path}: failed to extract archive: {exc}")
+            return result
+
+        # Recursively find all JSON files
+        json_files = _find_json_files_recursive(temp_path)
+        logger.info("Found %d JSON files in archive", len(json_files))
+
+        # Load and collect all issues
+        for json_file in json_files:
+            try:
+                with open(json_file, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                if isinstance(data, list):
+                    all_issues.extend(data)
+                elif isinstance(data, dict):
+                    all_issues.append(data)
+                else:
+                    errors.append(
+                        f"{json_file.name}: unexpected JSON root type {type(data).__name__}"
+                    )
+            except Exception as exc:
+                errors.append(f"{json_file.name}: {exc}")
+
+    logger.info("Collected %d issues from archive %s", len(all_issues), archive_file)
 
     result = await import_issues(db, all_issues)
     result.errors.extend(errors)

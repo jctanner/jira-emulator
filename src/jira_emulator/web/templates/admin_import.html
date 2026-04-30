@@ -8,13 +8,13 @@
 <div class="card">
     <h2>Import Issues</h2>
     <p style="color: var(--ds-text-subtle); margin-bottom: var(--ds-space-200);">
-        Upload a JSON file containing an array of issue objects (or a single issue object) to import into the emulator.
+        Upload a JSON file or archive (.zip, .tar.gz, .tgz, .tar) containing issue objects. Archives will be recursively searched for all .json files.
     </p>
 
     <form method="post" action="/admin/import" enctype="multipart/form-data">
         <div class="form-field">
-            <label>JSON File</label>
-            <input type="file" name="file" accept=".json" required>
+            <label>File</label>
+            <input type="file" name="file" accept=".json,.zip,.tar.gz,.tgz,.tar,application/json,application/zip,application/x-tar,application/gzip" required>
         </div>
         <button type="submit" class="btn btn-primary">Import</button>
     </form>

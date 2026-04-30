@@ -377,22 +377,54 @@ async def admin_import_upload(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
-    """Accept a JSON file upload and import issues."""
-    from jira_emulator.services.import_service import import_issues
+    """Accept a JSON or archive file upload and import issues."""
+    from jira_emulator.services.import_service import import_issues, import_archive
+    import tempfile
 
     try:
-        content = await file.read()
-        data = json.loads(content)
+        filename = file.filename or ""
 
-        if isinstance(data, dict):
-            data = [data]
+        # Check if this is an archive file
+        is_archive = (
+            filename.endswith(".tar.gz") or
+            filename.endswith(".tgz") or
+            filename.endswith(".tar") or
+            filename.endswith(".zip")
+        )
 
-        if not isinstance(data, list):
-            raise ValueError(
-                f"Expected a JSON array or object, got {type(data).__name__}"
-            )
+        if is_archive:
+            # Save uploaded archive to a temporary file and process it
+            # Determine the suffix (handle multi-part extensions like .tar.gz)
+            if filename.endswith(".tar.gz"):
+                suffix = ".tar.gz"
+            else:
+                suffix = os.path.splitext(filename)[1]
 
-        result = await import_issues(db, data)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+                content = await file.read()
+                temp_file.write(content)
+                temp_path = temp_file.name
+
+            try:
+                result = await import_archive(db, temp_path)
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+        else:
+            # Process as JSON file
+            content = await file.read()
+            data = json.loads(content)
+
+            if isinstance(data, dict):
+                data = [data]
+
+            if not isinstance(data, list):
+                raise ValueError(
+                    f"Expected a JSON array or object, got {type(data).__name__}"
+                )
+
+            result = await import_issues(db, data)
 
         snap_enabled = is_snapshot_enabled()
         return templates.TemplateResponse(
