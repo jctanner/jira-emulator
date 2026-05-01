@@ -22,21 +22,13 @@ class WorkflowTransition(Base):
     __tablename__ = "workflow_transitions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    workflow_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("workflows.id"), nullable=False
-    )
+    workflow_id: Mapped[int] = mapped_column(Integer, ForeignKey("workflows.id"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
-    from_status_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("statuses.id")
-    )
-    to_status_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("statuses.id"), nullable=False
-    )
+    from_status_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("statuses.id"))
+    to_status_id: Mapped[int] = mapped_column(Integer, ForeignKey("statuses.id"), nullable=False)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="transitions")
-    from_status: Mapped["Status | None"] = relationship(
-        foreign_keys=[from_status_id]
-    )
+    from_status: Mapped["Status | None"] = relationship(foreign_keys=[from_status_id])
     to_status: Mapped["Status"] = relationship(foreign_keys=[to_status_id])
 
 

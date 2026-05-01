@@ -11,9 +11,7 @@ class Label(Base):
     __table_args__ = (UniqueConstraint("issue_id", "label"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    issue_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False
-    )
+    issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False)
     label: Mapped[str] = mapped_column(String, nullable=False)
 
     issue: Mapped["Issue"] = relationship(back_populates="labels")

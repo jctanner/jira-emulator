@@ -10,9 +10,7 @@ class RemoteLink(Base):
     __tablename__ = "remote_links"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    issue_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False
-    )
+    issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str | None] = mapped_column(Text)

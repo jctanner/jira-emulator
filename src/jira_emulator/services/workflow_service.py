@@ -2,20 +2,19 @@
 
 from datetime import datetime
 
-from sqlalchemy import select, or_
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from jira_emulator.models.issue import Issue
 from jira_emulator.models.project import ProjectWorkflow
-from jira_emulator.models.workflow import Workflow, WorkflowTransition
-from jira_emulator.models.status import Status
 from jira_emulator.models.resolution import Resolution
-
+from jira_emulator.models.workflow import Workflow, WorkflowTransition
 
 # ---------------------------------------------------------------------------
 # get_workflow_for_issue
 # ---------------------------------------------------------------------------
+
 
 async def get_workflow_for_issue(db: AsyncSession, issue: Issue) -> Workflow | None:
     """Return the workflow governing *issue*.
@@ -60,9 +59,8 @@ async def get_workflow_for_issue(db: AsyncSession, issue: Issue) -> Workflow | N
 # get_available_transitions
 # ---------------------------------------------------------------------------
 
-async def get_available_transitions(
-    db: AsyncSession, issue: Issue
-) -> list[WorkflowTransition]:
+
+async def get_available_transitions(db: AsyncSession, issue: Issue) -> list[WorkflowTransition]:
     """Return every transition available from the issue's current status.
 
     A transition matches when:
@@ -93,8 +91,11 @@ async def get_available_transitions(
 # execute_transition
 # ---------------------------------------------------------------------------
 
+
 async def execute_transition(
-    db: AsyncSession, issue: Issue, transition_id: int,
+    db: AsyncSession,
+    issue: Issue,
+    transition_id: int,
     author_id: int | None = None,
     fields: dict | None = None,
 ) -> None:
@@ -140,10 +141,7 @@ async def execute_transition(
     transition = result.scalar_one_or_none()
 
     if transition is None:
-        raise ValueError(
-            f"Transition {transition_id} is not valid for issue "
-            f"{issue.key} in status {issue.status_id}"
-        )
+        raise ValueError(f"Transition {transition_id} is not valid for issue {issue.key} in status {issue.status_id}")
 
     now = datetime.utcnow()
 
@@ -159,9 +157,14 @@ async def execute_transition(
     # Record status change
     target_status = transition.to_status
     await history_service.record_change(
-        db, issue.id, author_id, "status",
-        old_status_name, old_status_id,
-        target_status.name, str(target_status.id),
+        db,
+        issue.id,
+        author_id,
+        "status",
+        old_status_name,
+        old_status_id,
+        target_status.name,
+        str(target_status.id),
     )
 
     # Handle resolution based on target status category
@@ -173,25 +176,26 @@ async def execute_transition(
             if isinstance(res_data, dict) and res_data.get("name"):
                 resolution_name = res_data["name"]
 
-        res_result = await db.execute(
-            select(Resolution).where(Resolution.name == resolution_name)
-        )
+        res_result = await db.execute(select(Resolution).where(Resolution.name == resolution_name))
         resolution = res_result.scalar_one_or_none()
 
         # Fallback to "Done" if the requested resolution doesn't exist
         if resolution is None and resolution_name != "Done":
-            res_result = await db.execute(
-                select(Resolution).where(Resolution.name == "Done")
-            )
+            res_result = await db.execute(select(Resolution).where(Resolution.name == "Done"))
             resolution = res_result.scalar_one_or_none()
 
         if resolution is not None:
             issue.resolution_id = resolution.id
             if old_resolution_name != resolution.name:
                 await history_service.record_change(
-                    db, issue.id, author_id, "resolution",
-                    old_resolution_name, old_resolution_id,
-                    resolution.name, str(resolution.id),
+                    db,
+                    issue.id,
+                    author_id,
+                    "resolution",
+                    old_resolution_name,
+                    old_resolution_id,
+                    resolution.name,
+                    str(resolution.id),
                 )
         issue.resolved_at = now
     else:
@@ -200,8 +204,14 @@ async def execute_transition(
         issue.resolved_at = None
         if old_resolution_name is not None:
             await history_service.record_change(
-                db, issue.id, author_id, "resolution",
-                old_resolution_name, old_resolution_id, None, None,
+                db,
+                issue.id,
+                author_id,
+                "resolution",
+                old_resolution_name,
+                old_resolution_id,
+                None,
+                None,
             )
 
     issue.updated_at = now

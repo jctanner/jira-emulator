@@ -9,7 +9,7 @@ import os
 import shutil
 import sqlite3
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jira_emulator.config import get_settings
 
@@ -58,11 +58,13 @@ def list_snapshots() -> list[dict]:
             continue
         full = os.path.join(SNAPSHOT_DIR, entry)
         stat = os.stat(full)
-        snapshots.append({
-            "name": entry,
-            "created": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-            "size_bytes": stat.st_size,
-        })
+        snapshots.append(
+            {
+                "name": entry,
+                "created": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
+                "size_bytes": stat.st_size,
+            }
+        )
 
     snapshots.sort(key=lambda s: s["created"], reverse=True)
     return snapshots
@@ -76,7 +78,7 @@ def create_snapshot(label: str | None = None) -> dict:
 
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
 
-    ts = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
     if label:
         # Sanitise label for use in filename
         safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in label)
@@ -97,7 +99,7 @@ def create_snapshot(label: str | None = None) -> dict:
     stat = os.stat(dest)
     return {
         "name": filename,
-        "created": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+        "created": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
         "size_bytes": stat.st_size,
     }
 

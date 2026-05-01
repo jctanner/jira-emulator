@@ -1,13 +1,16 @@
 import pytest
-import httpx
 
 AUTH = {"Authorization": "Basic YWRtaW46YWRtaW4="}
 
+
 async def _create_issue(client, project="RHOAIENG", summary="Test", issuetype="Bug"):
-    resp = await client.post("/rest/api/2/issue", json={
-        "fields": {"project": {"key": project}, "summary": summary, "issuetype": {"name": issuetype}}
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/issue",
+        json={"fields": {"project": {"key": project}, "summary": summary, "issuetype": {"name": issuetype}}},
+        headers=AUTH,
+    )
     return resp.json()
+
 
 @pytest.mark.asyncio
 async def test_new_issue_has_transitions(client):
@@ -17,6 +20,7 @@ async def test_new_issue_has_transitions(client):
     assert resp.status_code == 200
     transitions = resp.json()["transitions"]
     assert len(transitions) >= 1
+
 
 @pytest.mark.asyncio
 async def test_transition_changes_status(client):
@@ -33,23 +37,25 @@ async def test_transition_changes_status(client):
     target_name = transitions[0]["to"]["name"]
 
     # Perform transition
-    resp = await client.post(f"/rest/api/2/issue/{issue['key']}/transitions", json={
-        "transition": {"id": t_id}
-    }, headers=AUTH)
+    resp = await client.post(
+        f"/rest/api/2/issue/{issue['key']}/transitions", json={"transition": {"id": t_id}}, headers=AUTH
+    )
     assert resp.status_code == 204
 
     # Verify status changed
     resp = await client.get(f"/rest/api/2/issue/{issue['key']}", headers=AUTH)
     assert resp.json()["fields"]["status"]["name"] == target_name
 
+
 @pytest.mark.asyncio
 async def test_invalid_transition_returns_400(client):
     """Performing an invalid transition returns 400."""
     issue = await _create_issue(client)
-    resp = await client.post(f"/rest/api/2/issue/{issue['key']}/transitions", json={
-        "transition": {"id": "99999"}
-    }, headers=AUTH)
+    resp = await client.post(
+        f"/rest/api/2/issue/{issue['key']}/transitions", json={"transition": {"id": "99999"}}, headers=AUTH
+    )
     assert resp.status_code == 400
+
 
 @pytest.mark.asyncio
 async def test_transition_to_done_sets_resolution(client):
@@ -71,15 +77,18 @@ async def test_transition_to_done_sets_resolution(client):
         pytest.skip("No done transition available from initial status")
 
     # Perform the transition
-    await client.post(f"/rest/api/2/issue/{issue['key']}/transitions", json={
-        "transition": {"id": close_transition["id"]}
-    }, headers=AUTH)
+    await client.post(
+        f"/rest/api/2/issue/{issue['key']}/transitions",
+        json={"transition": {"id": close_transition["id"]}},
+        headers=AUTH,
+    )
 
     # Verify resolution is set
     resp = await client.get(f"/rest/api/2/issue/{issue['key']}", headers=AUTH)
     data = resp.json()
     assert data["fields"]["resolution"] is not None
     assert data["fields"]["resolution"]["name"] == "Done"
+
 
 @pytest.mark.asyncio
 async def test_reopen_from_closed(client):
@@ -91,9 +100,9 @@ async def test_reopen_from_closed(client):
     resp = await client.get(f"/rest/api/2/issue/{key}/transitions", headers=AUTH)
     transitions = resp.json()["transitions"]
     close_t = next(t for t in transitions if t["to"]["name"] == "Closed")
-    resp = await client.post(f"/rest/api/2/issue/{key}/transitions", json={
-        "transition": {"id": close_t["id"]}
-    }, headers=AUTH)
+    resp = await client.post(
+        f"/rest/api/2/issue/{key}/transitions", json={"transition": {"id": close_t["id"]}}, headers=AUTH
+    )
     assert resp.status_code == 204
 
     # Verify it's closed with resolution
@@ -106,9 +115,9 @@ async def test_reopen_from_closed(client):
     resp = await client.get(f"/rest/api/2/issue/{key}/transitions", headers=AUTH)
     transitions = resp.json()["transitions"]
     reopen_t = next(t for t in transitions if t["name"] == "Reopen")
-    resp = await client.post(f"/rest/api/2/issue/{key}/transitions", json={
-        "transition": {"id": reopen_t["id"]}
-    }, headers=AUTH)
+    resp = await client.post(
+        f"/rest/api/2/issue/{key}/transitions", json={"transition": {"id": reopen_t["id"]}}, headers=AUTH
+    )
     assert resp.status_code == 204
 
     # Verify it's reopened: active status, resolution cleared
@@ -130,9 +139,9 @@ async def test_reopen_from_done(client):
         resp = await client.get(f"/rest/api/2/issue/{key}/transitions", headers=AUTH)
         transitions = resp.json()["transitions"]
         t = next(t for t in transitions if t["name"] == step_name)
-        resp = await client.post(f"/rest/api/2/issue/{key}/transitions", json={
-            "transition": {"id": t["id"]}
-        }, headers=AUTH)
+        resp = await client.post(
+            f"/rest/api/2/issue/{key}/transitions", json={"transition": {"id": t["id"]}}, headers=AUTH
+        )
         assert resp.status_code == 204
 
     # Verify Done
@@ -144,9 +153,9 @@ async def test_reopen_from_done(client):
     resp = await client.get(f"/rest/api/2/issue/{key}/transitions", headers=AUTH)
     transitions = resp.json()["transitions"]
     reopen_t = next(t for t in transitions if t["name"] == "Reopen")
-    resp = await client.post(f"/rest/api/2/issue/{key}/transitions", json={
-        "transition": {"id": reopen_t["id"]}
-    }, headers=AUTH)
+    resp = await client.post(
+        f"/rest/api/2/issue/{key}/transitions", json={"transition": {"id": reopen_t["id"]}}, headers=AUTH
+    )
     assert resp.status_code == 204
 
     # Verify reopened
@@ -167,9 +176,9 @@ async def test_reopen_from_closed_via_v3(client):
     assert resp.status_code == 200
     transitions = resp.json()["transitions"]
     close_t = next(t for t in transitions if t["to"]["name"] == "Closed")
-    resp = await client.post(f"/rest/api/3/issue/{key}/transitions", json={
-        "transition": {"id": close_t["id"]}
-    }, headers=AUTH)
+    resp = await client.post(
+        f"/rest/api/3/issue/{key}/transitions", json={"transition": {"id": close_t["id"]}}, headers=AUTH
+    )
     assert resp.status_code == 204
 
     # Verify closed via v3
@@ -183,9 +192,9 @@ async def test_reopen_from_closed_via_v3(client):
     resp = await client.get(f"/rest/api/3/issue/{key}/transitions", headers=AUTH)
     transitions = resp.json()["transitions"]
     reopen_t = next(t for t in transitions if t["name"] == "Reopen")
-    resp = await client.post(f"/rest/api/3/issue/{key}/transitions", json={
-        "transition": {"id": reopen_t["id"]}
-    }, headers=AUTH)
+    resp = await client.post(
+        f"/rest/api/3/issue/{key}/transitions", json={"transition": {"id": reopen_t["id"]}}, headers=AUTH
+    )
     assert resp.status_code == 204
 
     # Verify reopened via v3 — description should be ADF, resolution cleared
@@ -207,10 +216,14 @@ async def test_close_with_resolution_override(client):
     close_t = next(t for t in transitions if t["to"]["name"] == "Closed")
 
     # Close with resolution "Obsolete"
-    resp = await client.post(f"/rest/api/2/issue/{key}/transitions", json={
-        "transition": {"id": close_t["id"]},
-        "fields": {"resolution": {"name": "Obsolete"}},
-    }, headers=AUTH)
+    resp = await client.post(
+        f"/rest/api/2/issue/{key}/transitions",
+        json={
+            "transition": {"id": close_t["id"]},
+            "fields": {"resolution": {"name": "Obsolete"}},
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 204
 
     # Verify resolution is "Obsolete", not "Done"
@@ -230,9 +243,13 @@ async def test_close_without_resolution_defaults_to_done(client):
     transitions = resp.json()["transitions"]
     close_t = next(t for t in transitions if t["to"]["name"] == "Closed")
 
-    resp = await client.post(f"/rest/api/2/issue/{key}/transitions", json={
-        "transition": {"id": close_t["id"]},
-    }, headers=AUTH)
+    resp = await client.post(
+        f"/rest/api/2/issue/{key}/transitions",
+        json={
+            "transition": {"id": close_t["id"]},
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 204
 
     resp = await client.get(f"/rest/api/2/issue/{key}", headers=AUTH)
@@ -251,10 +268,14 @@ async def test_close_with_resolution_override_via_v3(client):
     close_t = next(t for t in transitions if t["to"]["name"] == "Closed")
 
     # Close with resolution "Obsolete" via v3
-    resp = await client.post(f"/rest/api/3/issue/{key}/transitions", json={
-        "transition": {"id": close_t["id"]},
-        "fields": {"resolution": {"name": "Obsolete"}},
-    }, headers=AUTH)
+    resp = await client.post(
+        f"/rest/api/3/issue/{key}/transitions",
+        json={
+            "transition": {"id": close_t["id"]},
+            "fields": {"resolution": {"name": "Obsolete"}},
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 204
 
     # Verify via v3
@@ -270,11 +291,15 @@ async def test_issue_split_link_via_v3(client):
     i1 = await _create_issue(client, summary="Parent RFE")
     i2 = await _create_issue(client, summary="Child RFE")
 
-    resp = await client.post("/rest/api/3/issueLink", json={
-        "type": {"name": "Issue split"},
-        "inwardIssue": {"key": i1["key"]},
-        "outwardIssue": {"key": i2["key"]},
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/3/issueLink",
+        json={
+            "type": {"name": "Issue split"},
+            "inwardIssue": {"key": i1["key"]},
+            "outwardIssue": {"key": i2["key"]},
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 201
 
     # Verify link appears via v3

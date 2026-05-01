@@ -10,15 +10,15 @@ from jira_emulator.auth.middleware import get_current_user
 from jira_emulator.config import get_settings
 from jira_emulator.database import get_db
 from jira_emulator.models.user import User
-from jira_emulator.services import auth_service
-from jira_emulator.services.user_service import get_user_by_username
 from jira_emulator.schemas.auth import (
     ChangePasswordRequest,
+    LoginInfo,
+    SessionInfo,
     SessionLoginRequest,
     SessionLoginResponse,
-    SessionInfo,
-    LoginInfo,
 )
+from jira_emulator.services import auth_service
+from jira_emulator.services.user_service import get_user_by_username
 
 router = APIRouter()
 
@@ -93,10 +93,12 @@ async def session_login(
         user = await get_user_by_username(db, body.username)
         if user is None:
             from jira_emulator.services.user_service import get_or_create_user
+
             user = await get_or_create_user(db, body.username, body.username)
     elif settings.AUTH_MODE == "permissive":
         # In permissive mode, auto-create but don't validate password
         from jira_emulator.services.user_service import get_or_create_user
+
         user = await get_or_create_user(db, body.username, body.username)
     else:
         # strict mode: validate credentials
@@ -105,9 +107,7 @@ async def session_login(
             raise HTTPException(
                 status_code=401,
                 detail={
-                    "errorMessages": [
-                        "Login failed. Check your username and password and try again."
-                    ],
+                    "errorMessages": ["Login failed. Check your username and password and try again."],
                     "errors": {},
                 },
             )
@@ -141,6 +141,7 @@ async def get_session(
     if session_id and session_id in _sessions:
         user_id = _sessions[session_id]
         from sqlalchemy import select
+
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if user:

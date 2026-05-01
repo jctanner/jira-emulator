@@ -12,9 +12,7 @@ class Attachment(Base):
     __tablename__ = "attachments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    issue_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False
-    )
+    issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False)
     author_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"))
     filename: Mapped[str] = mapped_column(String, nullable=False)
     size: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -1,7 +1,6 @@
 """Tests for metadata listing endpoints (priorities, statuses, resolutions, issue types, fields)."""
 
 import httpx
-import pytest
 
 from tests.conftest import AUTH_HEADER
 
@@ -77,8 +76,14 @@ async def test_list_issue_types_returns_eight(client: httpx.AsyncClient):
 
     names = {it["name"] for it in data}
     expected = {
-        "Feature Request", "Feature", "Initiative", "Bug",
-        "Task", "Story", "Epic", "Sub-task",
+        "Feature Request",
+        "Feature",
+        "Initiative",
+        "Bug",
+        "Task",
+        "Story",
+        "Epic",
+        "Sub-task",
     }
     assert names == expected
 
@@ -101,8 +106,17 @@ async def test_list_fields_returns_definitions(client: httpx.AsyncClient):
 
     # Check that well-known system fields are present
     field_ids = {f["id"] for f in data}
-    for expected_id in ("summary", "status", "priority", "assignee", "reporter",
-                        "issuetype", "project", "description", "labels"):
+    for expected_id in (
+        "summary",
+        "status",
+        "priority",
+        "assignee",
+        "reporter",
+        "issuetype",
+        "project",
+        "description",
+        "labels",
+    ):
         assert expected_id in field_ids, f"Missing system field: {expected_id}"
 
     # Custom fields from seed data should be present

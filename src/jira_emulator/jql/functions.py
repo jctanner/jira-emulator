@@ -8,12 +8,12 @@ to concrete Python values that the transformer can embed in SQL clauses.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, date, time
-
+from datetime import date, datetime, time, timedelta
 
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
+
 
 def resolve_function(
     name: str,
@@ -71,6 +71,7 @@ def resolve_function(
 # Function implementations
 # ---------------------------------------------------------------------------
 
+
 def _current_user(current_username: str | None) -> str:
     if current_username is None:
         raise ValueError("currentUser() requires an authenticated user")
@@ -103,9 +104,7 @@ def _start_of_week(offset: str | None = None) -> datetime:
     if offset is not None:
         base += _parse_offset(offset)
         # Re-snap to start of that week
-        base = datetime.combine(
-            (base.date() - timedelta(days=base.date().weekday())), time.min
-        )
+        base = datetime.combine((base.date() - timedelta(days=base.date().weekday())), time.min)
     return base
 
 
@@ -191,10 +190,7 @@ def _parse_offset(offset_str: str) -> timedelta:
     cleaned = str(offset_str).strip().strip("'\"")
     match = _OFFSET_RE.match(cleaned)
     if not match:
-        raise ValueError(
-            f"Invalid offset format: '{offset_str}'. "
-            "Expected a string like '-1d', '2w', '3M'."
-        )
+        raise ValueError(f"Invalid offset format: '{offset_str}'. Expected a string like '-1d', '2w', '3M'.")
 
     amount = int(match.group(1))
     unit = match.group(2)

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel
 
 # ---- user management ----
+
 
 class CreateUserRequest(BaseModel):
     """POST /rest/api/2/user body."""
@@ -32,6 +32,7 @@ class ChangePasswordRequest(BaseModel):
 
 
 # ---- session / cookie auth ----
+
 
 class SessionLoginRequest(BaseModel):
     """POST /rest/auth/1/session body."""
@@ -64,6 +65,7 @@ class SessionLoginResponse(BaseModel):
 
 
 # ---- API tokens (PAT) ----
+
 
 class CreateTokenRequest(BaseModel):
     """POST /rest/pat/latest/tokens body."""

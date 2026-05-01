@@ -76,9 +76,7 @@ async def get_current_user(
     return await _permissive_auth(request, db, auth_header, settings)
 
 
-async def _strict_auth(
-    request: Request, db: AsyncSession, auth_header: str, settings
-) -> User:
+async def _strict_auth(request: Request, db: AsyncSession, auth_header: str, settings) -> User:
     """Strict mode: validate credentials or return 401."""
     basic = _parse_basic_auth(auth_header)
     if basic:
@@ -109,9 +107,7 @@ async def _strict_auth(
     )
 
 
-async def _permissive_auth(
-    request: Request, db: AsyncSession, auth_header: str, settings
-) -> User:
+async def _permissive_auth(request: Request, db: AsyncSession, auth_header: str, settings) -> User:
     """Permissive mode: extract user info but don't validate passwords."""
     basic = _parse_basic_auth(auth_header)
     if basic:

@@ -18,7 +18,6 @@ import os
 import sys
 import urllib.error
 import urllib.request
-from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -30,7 +29,8 @@ JIRA_SERVER = os.environ.get("JIRA_SERVER")
 JIRA_USER = os.environ.get("JIRA_USER")
 JIRA_TOKEN = os.environ.get("JIRA_TOKEN")
 
-_missing = [v for v, val in [("JIRA_SERVER", JIRA_SERVER), ("JIRA_USER", JIRA_USER), ("JIRA_TOKEN", JIRA_TOKEN)] if not val]
+_env_pairs = [("JIRA_SERVER", JIRA_SERVER), ("JIRA_USER", JIRA_USER), ("JIRA_TOKEN", JIRA_TOKEN)]
+_missing = [v for v, val in _env_pairs if not val]
 if _missing:
     print(f"Error: missing required environment variables: {', '.join(_missing)}", file=sys.stderr)
     sys.exit(1)
@@ -48,6 +48,7 @@ mcp = FastMCP("atlassian", host=MCP_HOST, port=MCP_PORT)
 # ---------------------------------------------------------------------------
 # HTTP helper
 # ---------------------------------------------------------------------------
+
 
 def _request(method: str, path: str, body: dict | None = None) -> dict | str:
     """Make an authenticated HTTP request to the Jira API.
@@ -113,7 +114,7 @@ def getJiraIssue(issueIdOrKey: str) -> dict:
 def searchJiraIssuesUsingJql(
     jql: str,
     maxResults: int = 50,
-    fields: Optional[list[str]] = None,
+    fields: list[str] | None = None,
 ) -> dict:
     """Search for Jira issues using JQL.
 
@@ -130,10 +131,10 @@ def createJiraIssue(
     projectKey: str,
     issueTypeName: str,
     summary: str,
-    description: Optional[str] = None,
-    priority: Optional[str] = None,
-    labels: Optional[list[str]] = None,
-    additionalFields: Optional[dict] = None,
+    description: str | None = None,
+    priority: str | None = None,
+    labels: list[str] | None = None,
+    additionalFields: dict | None = None,
 ) -> dict:
     """Create a new Jira issue.
 
@@ -188,7 +189,7 @@ def getTransitionsForJiraIssue(issueIdOrKey: str) -> dict:
 def transitionJiraIssue(
     issueIdOrKey: str,
     transitionId: str,
-    fields: Optional[dict] = None,
+    fields: dict | None = None,
 ) -> dict:
     """Perform a workflow transition on a Jira issue."""
     payload: dict = {"transition": {"id": transitionId}}
@@ -204,15 +205,26 @@ def transitionJiraIssue(
 # Multipart upload helper
 # ---------------------------------------------------------------------------
 
-def _multipart_request(method: str, path: str, filename: str, file_bytes: bytes, content_type: str = "application/octet-stream") -> dict | str:
+
+def _multipart_request(
+    method: str,
+    path: str,
+    filename: str,
+    file_bytes: bytes,
+    content_type: str = "application/octet-stream",
+) -> dict | str:
     """Make a multipart/form-data request for file upload."""
     boundary = "----JiraMCPBoundary9876543210"
     body = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
-        f"Content-Type: {content_type}\r\n"
-        f"\r\n"
-    ).encode("utf-8") + file_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            f"Content-Type: {content_type}\r\n"
+            f"\r\n"
+        ).encode()
+        + file_bytes
+        + f"\r\n--{boundary}--\r\n".encode()
+    )
 
     url = f"{JIRA_SERVER}{path}"
     req = urllib.request.Request(
@@ -271,6 +283,7 @@ def addAttachmentToJiraIssue(issueIdOrKey: str, filename: str, fileContent: str)
         return {"error": True, "message": f"Invalid base64 content: {exc}"}
 
     import mimetypes
+
     content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
     return _multipart_request(

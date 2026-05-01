@@ -30,11 +30,15 @@ async def test_full_workflow(client):
     assert "RHOAIENG" in project_keys
 
     # 3. Search for existing issues (empty project) — POST /rest/api/2/search
-    resp = await client.post("/rest/api/2/search", json={
-        "jql": "project = RHOAIENG ORDER BY created DESC",
-        "startAt": 0,
-        "maxResults": 50,
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": "project = RHOAIENG ORDER BY created DESC",
+            "startAt": 0,
+            "maxResults": 50,
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 200
     search_result = resp.json()
     assert "total" in search_result
@@ -44,16 +48,20 @@ async def test_full_workflow(client):
     initial_count = search_result["total"]
 
     # 4. Create an issue — POST /rest/api/2/issue
-    resp = await client.post("/rest/api/2/issue", json={
-        "fields": {
-            "project": {"key": "RHOAIENG"},
-            "summary": "Client compat test issue",
-            "description": "Created by client compatibility test",
-            "issuetype": {"name": "Bug"},
-            "priority": {"name": "Major"},
-            "labels": ["compat-test", "automated"],
-        }
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/issue",
+        json={
+            "fields": {
+                "project": {"key": "RHOAIENG"},
+                "summary": "Client compat test issue",
+                "description": "Created by client compatibility test",
+                "issuetype": {"name": "Bug"},
+                "priority": {"name": "Major"},
+                "labels": ["compat-test", "automated"],
+            }
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 201
     created = resp.json()
     assert "id" in created
@@ -87,26 +95,34 @@ async def test_full_workflow(client):
     assert "updated" in fields
 
     # 6. Create a second issue for linking
-    resp = await client.post("/rest/api/2/issue", json={
-        "fields": {
-            "project": {"key": "RHOAIENG"},
-            "summary": "Related issue for linking",
-            "issuetype": {"name": "Story"},
-        }
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/issue",
+        json={
+            "fields": {
+                "project": {"key": "RHOAIENG"},
+                "summary": "Related issue for linking",
+                "issuetype": {"name": "Story"},
+            }
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 201
     related_key = resp.json()["key"]
 
     # 7. Update the issue — PUT /rest/api/2/issue/{key}
-    resp = await client.put(f"/rest/api/2/issue/{issue_key}", json={
-        "fields": {
-            "summary": "Updated client compat test issue",
+    resp = await client.put(
+        f"/rest/api/2/issue/{issue_key}",
+        json={
+            "fields": {
+                "summary": "Updated client compat test issue",
+            },
+            "update": {
+                "labels": [{"add": "updated"}],
+                "comment": [{"add": {"body": "Comment via update dict"}}],
+            },
         },
-        "update": {
-            "labels": [{"add": "updated"}],
-            "comment": [{"add": {"body": "Comment via update dict"}}],
-        }
-    }, headers=AUTH)
+        headers=AUTH,
+    )
     assert resp.status_code == 204
 
     # Verify the update
@@ -116,9 +132,9 @@ async def test_full_workflow(client):
     assert "updated" in fields["labels"]
 
     # 8. Add a comment — POST /rest/api/2/issue/{key}/comment
-    resp = await client.post(f"/rest/api/2/issue/{issue_key}/comment", json={
-        "body": "This is a standalone comment"
-    }, headers=AUTH)
+    resp = await client.post(
+        f"/rest/api/2/issue/{issue_key}/comment", json={"body": "This is a standalone comment"}, headers=AUTH
+    )
     assert resp.status_code == 201
     comment = resp.json()
     assert comment["body"] == "This is a standalone comment"
@@ -149,17 +165,21 @@ async def test_full_workflow(client):
 
     # 10. Perform transition — POST /rest/api/2/issue/{key}/transitions
     transition_id = transitions["transitions"][0]["id"]
-    resp = await client.post(f"/rest/api/2/issue/{issue_key}/transitions", json={
-        "transition": {"id": transition_id}
-    }, headers=AUTH)
+    resp = await client.post(
+        f"/rest/api/2/issue/{issue_key}/transitions", json={"transition": {"id": transition_id}}, headers=AUTH
+    )
     assert resp.status_code == 204
 
     # 11. Create issue link — POST /rest/api/2/issueLink
-    resp = await client.post("/rest/api/2/issueLink", json={
-        "type": {"name": "Blocks"},
-        "inwardIssue": {"key": issue_key},
-        "outwardIssue": {"key": related_key},
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/issueLink",
+        json={
+            "type": {"name": "Blocks"},
+            "inwardIssue": {"key": issue_key},
+            "outwardIssue": {"key": related_key},
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 201
 
     # Verify link appears in issue response
@@ -182,18 +202,26 @@ async def test_full_workflow(client):
     assert watchers["watchCount"] >= 1
 
     # 13. Search with filters — verify new issue appears
-    resp = await client.post("/rest/api/2/search", json={
-        "jql": "project = RHOAIENG ORDER BY created DESC",
-        "maxResults": 50,
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": "project = RHOAIENG ORDER BY created DESC",
+            "maxResults": 50,
+        },
+        headers=AUTH,
+    )
     assert resp.json()["total"] == initial_count + 2  # original + related
 
     # 14. Search with field selection
-    resp = await client.post("/rest/api/2/search", json={
-        "jql": f"key = {issue_key}",
-        "fields": ["summary", "status", "assignee"],
-        "maxResults": 1,
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": f"key = {issue_key}",
+            "fields": ["summary", "status", "assignee"],
+            "maxResults": 1,
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 200
     limited = resp.json()["issues"][0]["fields"]
     assert "summary" in limited
@@ -266,66 +294,98 @@ async def test_jql_patterns_used_by_client(client):
     """Test the specific JQL patterns that assistant_mcp tools generate."""
     # Create some test issues
     for i in range(3):
-        await client.post("/rest/api/2/issue", json={
-            "fields": {
-                "project": {"key": "RHOAIENG"},
-                "summary": f"JQL pattern test {i}",
-                "issuetype": {"name": "Bug"},
-                "priority": {"name": "Major"},
-                "labels": ["jql-test"],
-            }
-        }, headers=AUTH)
+        await client.post(
+            "/rest/api/2/issue",
+            json={
+                "fields": {
+                    "project": {"key": "RHOAIENG"},
+                    "summary": f"JQL pattern test {i}",
+                    "issuetype": {"name": "Bug"},
+                    "priority": {"name": "Major"},
+                    "labels": ["jql-test"],
+                }
+            },
+            headers=AUTH,
+        )
 
     # Pattern 1: project = KEY ORDER BY created DESC
-    resp = await client.post("/rest/api/2/search", json={
-        "jql": "project = RHOAIENG ORDER BY created DESC",
-        "maxResults": 50,
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": "project = RHOAIENG ORDER BY created DESC",
+            "maxResults": 50,
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 200
     assert resp.json()["total"] >= 3
 
     # Pattern 2: project = KEY AND status = "Name"
-    resp = await client.post("/rest/api/2/search", json={
-        "jql": 'project = RHOAIENG AND status = "New"',
-        "maxResults": 50,
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": 'project = RHOAIENG AND status = "New"',
+            "maxResults": 50,
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 200
 
     # Pattern 3: project = KEY AND issuetype = Name
-    resp = await client.post("/rest/api/2/search", json={
-        "jql": "project = RHOAIENG AND issuetype = Bug",
-        "maxResults": 50,
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": "project = RHOAIENG AND issuetype = Bug",
+            "maxResults": 50,
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 200
 
     # Pattern 4: labels = value
-    resp = await client.post("/rest/api/2/search", json={
-        "jql": "project = RHOAIENG AND labels = jql-test",
-        "maxResults": 50,
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": "project = RHOAIENG AND labels = jql-test",
+            "maxResults": 50,
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 200
     assert resp.json()["total"] >= 3
 
     # Pattern 5: resolution = Unresolved
-    resp = await client.post("/rest/api/2/search", json={
-        "jql": "project = RHOAIENG AND resolution = Unresolved",
-        "maxResults": 50,
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": "project = RHOAIENG AND resolution = Unresolved",
+            "maxResults": 50,
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 200
 
     # Pattern 6: summary ~ "text"
-    resp = await client.post("/rest/api/2/search", json={
-        "jql": 'project = RHOAIENG AND summary ~ "pattern test"',
-        "maxResults": 50,
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": 'project = RHOAIENG AND summary ~ "pattern test"',
+            "maxResults": 50,
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 200
     assert resp.json()["total"] >= 3
 
     # Pattern 7: key = ISSUE-KEY
-    resp = await client.post("/rest/api/2/search", json={
-        "jql": "key = RHOAIENG-1",
-        "maxResults": 1,
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": "key = RHOAIENG-1",
+            "maxResults": 1,
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 200
 
 
@@ -333,10 +393,13 @@ async def test_jql_patterns_used_by_client(client):
 async def test_session_auth_flow(client):
     """Test the session authentication flow used by assistant_mcp."""
     # Login
-    resp = await client.post("/rest/auth/1/session", json={
-        "username": "admin",
-        "password": "admin",
-    })
+    resp = await client.post(
+        "/rest/auth/1/session",
+        json={
+            "username": "admin",
+            "password": "admin",
+        },
+    )
     assert resp.status_code == 200
     session_data = resp.json()
     assert "session" in session_data
@@ -357,9 +420,13 @@ async def test_session_auth_flow(client):
 async def test_token_auth_flow(client):
     """Test the PAT authentication flow."""
     # Create token
-    resp = await client.post("/rest/pat/latest/tokens", json={
-        "name": "Compat Test Token",
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/pat/latest/tokens",
+        json={
+            "name": "Compat Test Token",
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 201
     token_data = resp.json()
     assert "rawToken" in token_data
@@ -385,12 +452,16 @@ async def test_token_auth_flow(client):
 async def test_user_management_flow(client):
     """Test user CRUD as used by assistant_mcp."""
     # Create user
-    resp = await client.post("/rest/api/2/user", json={
-        "name": "compat_test_user",
-        "displayName": "Compat Test User",
-        "emailAddress": "compat@example.com",
-        "password": "testpass123",
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/user",
+        json={
+            "name": "compat_test_user",
+            "displayName": "Compat Test User",
+            "emailAddress": "compat@example.com",
+            "password": "testpass123",
+        },
+        headers=AUTH,
+    )
     assert resp.status_code == 201
     user = resp.json()
     assert user["name"] == "compat_test_user"

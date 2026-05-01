@@ -13,10 +13,10 @@ from jira_emulator import __version__
 from jira_emulator.config import get_settings
 from jira_emulator.database import get_session_factory, init_db
 from jira_emulator.exceptions import (
-    IssueNotFoundError,
-    ProjectNotFoundError,
     InvalidTransitionError,
+    IssueNotFoundError,
     JQLParseError,
+    ProjectNotFoundError,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,9 +61,11 @@ async def lifespan(app: FastAPI):
     # Import on startup
     if settings.IMPORT_ON_STARTUP:
         import os
+
         import_dir = settings.IMPORT_DIR
         if os.path.isdir(import_dir):
             from jira_emulator.services.import_service import import_directory
+
             factory = get_session_factory()
             async with factory() as db:
                 try:
@@ -104,7 +106,7 @@ def create_app() -> FastAPI:
         async def dispatch(self, request: Request, call_next):
             if request.url.path.startswith("/rest/api/3/"):
                 request.state.api_version = 3
-                new_path = "/rest/api/2/" + request.url.path[len("/rest/api/3/"):]
+                new_path = "/rest/api/2/" + request.url.path[len("/rest/api/3/") :]
                 request.scope["path"] = new_path
             else:
                 request.state.api_version = 2
@@ -160,6 +162,7 @@ def create_app() -> FastAPI:
 
     # Web UI router
     from jira_emulator.web.routes import router as web_router
+
     app.include_router(web_router)
 
     # Global exception handler for Jira-format errors

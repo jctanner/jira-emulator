@@ -29,7 +29,9 @@ def _link_response(link: RemoteLink, request: Request, issue_key: str) -> dict:
             "icon": {
                 "url16x16": link.icon_url or "",
                 "title": link.icon_title or "",
-            } if link.icon_url else {},
+            }
+            if link.icon_url
+            else {},
             "status": {"icon": {}},
         },
     }
@@ -51,11 +53,7 @@ async def _resolve_issue(db: AsyncSession, issue_key: str):
 
 
 async def _resolve_link(db: AsyncSession, issue_id: int, link_id: int):
-    result = await db.execute(
-        select(RemoteLink).where(
-            RemoteLink.id == link_id, RemoteLink.issue_id == issue_id
-        )
-    )
+    result = await db.execute(select(RemoteLink).where(RemoteLink.id == link_id, RemoteLink.issue_id == issue_id))
     link = result.scalar_one_or_none()
     if link is None:
         raise HTTPException(

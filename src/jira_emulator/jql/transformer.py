@@ -11,30 +11,27 @@ Usage::
 
 from __future__ import annotations
 
-from datetime import datetime
+import re
 from typing import Any
 
 import lark
-from sqlalchemy import select, and_, or_, not_, exists
+from sqlalchemy import and_, exists, not_, or_, select
 from sqlalchemy.sql import func
 
-from jira_emulator.models.issue import Issue
-from jira_emulator.models.project import Project
-from jira_emulator.models.status import Status
-from jira_emulator.models.issue_type import IssueType
-from jira_emulator.models.priority import Priority
-from jira_emulator.models.user import User
-from jira_emulator.models.resolution import Resolution
-from jira_emulator.models.label import Label
-from jira_emulator.models.component import Component, IssueComponent
-from jira_emulator.models.version import Version, IssueFixVersion, IssueAffectsVersion
-from jira_emulator.models.comment import Comment
-from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue
-from jira_emulator.models.sprint import Sprint, IssueSprint
-
 from jira_emulator.jql.functions import resolve_function
-
-import re
+from jira_emulator.models.comment import Comment
+from jira_emulator.models.component import Component, IssueComponent
+from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue
+from jira_emulator.models.issue import Issue
+from jira_emulator.models.issue_type import IssueType
+from jira_emulator.models.label import Label
+from jira_emulator.models.priority import Priority
+from jira_emulator.models.project import Project
+from jira_emulator.models.resolution import Resolution
+from jira_emulator.models.sprint import IssueSprint, Sprint
+from jira_emulator.models.status import Status
+from jira_emulator.models.user import User
+from jira_emulator.models.version import IssueAffectsVersion, IssueFixVersion, Version
 
 
 class JQLTransformer:
@@ -447,25 +444,15 @@ class JQLTransformer:
                 return fk_col.isnot(None)
 
         if op == "op_eq":
-            return fk_col.in_(
-                select(model.id).where(func.lower(lookup_col) == func.lower(str(value)))
-            )
+            return fk_col.in_(select(model.id).where(func.lower(lookup_col) == func.lower(str(value))))
         if op == "op_ne":
-            return ~fk_col.in_(
-                select(model.id).where(func.lower(lookup_col) == func.lower(str(value)))
-            )
+            return ~fk_col.in_(select(model.id).where(func.lower(lookup_col) == func.lower(str(value))))
         if op == "op_contains":
-            return fk_col.in_(
-                select(model.id).where(lookup_col.ilike(f"%{value}%"))
-            )
+            return fk_col.in_(select(model.id).where(lookup_col.ilike(f"%{value}%")))
         if op == "op_not_contains":
-            return ~fk_col.in_(
-                select(model.id).where(lookup_col.ilike(f"%{value}%"))
-            )
+            return ~fk_col.in_(select(model.id).where(lookup_col.ilike(f"%{value}%")))
 
-        raise ValueError(
-            f"Operator '{op}' is not supported for lookup field '{field}'"
-        )
+        raise ValueError(f"Operator '{op}' is not supported for lookup field '{field}'")
 
     # --- text (summary OR description) ---
 
@@ -507,9 +494,7 @@ class JQLTransformer:
             select(IssueComponent.issue_id).where(
                 IssueComponent.issue_id == Issue.id,
                 IssueComponent.component_id.in_(
-                    select(Component.id).where(
-                        func.lower(Component.name) == func.lower(str(value))
-                    )
+                    select(Component.id).where(func.lower(Component.name) == func.lower(str(value)))
                 ),
             )
         )
@@ -526,9 +511,7 @@ class JQLTransformer:
             select(IssueFixVersion.issue_id).where(
                 IssueFixVersion.issue_id == Issue.id,
                 IssueFixVersion.version_id.in_(
-                    select(Version.id).where(
-                        func.lower(Version.name) == func.lower(str(value))
-                    )
+                    select(Version.id).where(func.lower(Version.name) == func.lower(str(value)))
                 ),
             )
         )
@@ -536,9 +519,7 @@ class JQLTransformer:
             return fv_exists
         if op == "op_ne":
             return ~fv_exists
-        raise ValueError(
-            f"Operator '{op}' is not supported for 'fixVersion' field"
-        )
+        raise ValueError(f"Operator '{op}' is not supported for 'fixVersion' field")
 
     # --- affectedVersion ---
 
@@ -547,9 +528,7 @@ class JQLTransformer:
             select(IssueAffectsVersion.issue_id).where(
                 IssueAffectsVersion.issue_id == Issue.id,
                 IssueAffectsVersion.version_id.in_(
-                    select(Version.id).where(
-                        func.lower(Version.name) == func.lower(str(value))
-                    )
+                    select(Version.id).where(func.lower(Version.name) == func.lower(str(value)))
                 ),
             )
         )
@@ -557,9 +536,7 @@ class JQLTransformer:
             return av_exists
         if op == "op_ne":
             return ~av_exists
-        raise ValueError(
-            f"Operator '{op}' is not supported for 'affectedVersion' field"
-        )
+        raise ValueError(f"Operator '{op}' is not supported for 'affectedVersion' field")
 
     # --- parent ---
 
@@ -599,9 +576,7 @@ class JQLTransformer:
             return Issue.status_id.in_(subq)
         if op == "op_ne":
             return ~Issue.status_id.in_(subq)
-        raise ValueError(
-            f"Operator '{op}' is not supported for 'statusCategory' field"
-        )
+        raise ValueError(f"Operator '{op}' is not supported for 'statusCategory' field")
 
     # --- comment ---
 
@@ -658,9 +633,7 @@ class JQLTransformer:
                     IssueCustomFieldValue.value_string.ilike(f"%{value}%"),
                 )
             )
-        raise ValueError(
-            f"Operator '{op}' is not supported for custom field '{field_id}'"
-        )
+        raise ValueError(f"Operator '{op}' is not supported for custom field '{field_id}'")
 
     # --- sprint ---
 
@@ -668,11 +641,7 @@ class JQLTransformer:
         sprint_exists = exists(
             select(IssueSprint.issue_id).where(
                 IssueSprint.issue_id == Issue.id,
-                IssueSprint.sprint_id.in_(
-                    select(Sprint.id).where(
-                        func.lower(Sprint.name) == func.lower(str(value))
-                    )
-                ),
+                IssueSprint.sprint_id.in_(select(Sprint.id).where(func.lower(Sprint.name) == func.lower(str(value)))),
             )
         )
         if op == "op_eq":
@@ -747,9 +716,7 @@ class JQLTransformer:
                 select(IssueComponent.issue_id).where(
                     IssueComponent.issue_id == Issue.id,
                     IssueComponent.component_id.in_(
-                        select(Component.id).where(
-                            func.lower(Component.name).in_(lower_vals)
-                        )
+                        select(Component.id).where(func.lower(Component.name).in_(lower_vals))
                     ),
                 )
             )
@@ -762,11 +729,7 @@ class JQLTransformer:
             fv_exists = exists(
                 select(IssueFixVersion.issue_id).where(
                     IssueFixVersion.issue_id == Issue.id,
-                    IssueFixVersion.version_id.in_(
-                        select(Version.id).where(
-                            func.lower(Version.name).in_(lower_vals)
-                        )
-                    ),
+                    IssueFixVersion.version_id.in_(select(Version.id).where(func.lower(Version.name).in_(lower_vals))),
                 )
             )
             return ~fv_exists if negate else fv_exists
@@ -784,11 +747,7 @@ class JQLTransformer:
             sprint_exists = exists(
                 select(IssueSprint.issue_id).where(
                     IssueSprint.issue_id == Issue.id,
-                    IssueSprint.sprint_id.in_(
-                        select(Sprint.id).where(
-                            func.lower(Sprint.name).in_(lower_vals)
-                        )
-                    ),
+                    IssueSprint.sprint_id.in_(select(Sprint.id).where(func.lower(Sprint.name).in_(lower_vals))),
                 )
             )
             return ~sprint_exists if negate else sprint_exists
@@ -838,27 +797,17 @@ class JQLTransformer:
 
         # Labels IS EMPTY -> no labels exist
         if field == "labels":
-            label_exists = exists(
-                select(Label.id).where(Label.issue_id == Issue.id)
-            )
+            label_exists = exists(select(Label.id).where(Label.issue_id == Issue.id))
             return label_exists if negate else ~label_exists
 
         # Component IS EMPTY
         if field == "component":
-            comp_exists = exists(
-                select(IssueComponent.issue_id).where(
-                    IssueComponent.issue_id == Issue.id
-                )
-            )
+            comp_exists = exists(select(IssueComponent.issue_id).where(IssueComponent.issue_id == Issue.id))
             return comp_exists if negate else ~comp_exists
 
         # fixVersion IS EMPTY
         if field in ("fixversion", "fixversions"):
-            fv_exists = exists(
-                select(IssueFixVersion.issue_id).where(
-                    IssueFixVersion.issue_id == Issue.id
-                )
-            )
+            fv_exists = exists(select(IssueFixVersion.issue_id).where(IssueFixVersion.issue_id == Issue.id))
             return fv_exists if negate else ~fv_exists
 
         # statusCategory IS EMPTY -- status has no category set
@@ -873,11 +822,7 @@ class JQLTransformer:
 
         # sprint IS EMPTY -- issue has no sprint associations
         if field == "sprint":
-            sprint_exists = exists(
-                select(IssueSprint.issue_id).where(
-                    IssueSprint.issue_id == Issue.id
-                )
-            )
+            sprint_exists = exists(select(IssueSprint.issue_id).where(IssueSprint.issue_id == Issue.id))
             return sprint_exists if negate else ~sprint_exists
 
         # cf[NNNNN] IS EMPTY
@@ -945,9 +890,7 @@ class JQLTransformer:
 
                 col = self._ORDER_BY_COLUMNS.get(field_name)
                 if col is None:
-                    raise ValueError(
-                        f"Cannot ORDER BY unsupported field: '{field_name}'"
-                    )
+                    raise ValueError(f"Cannot ORDER BY unsupported field: '{field_name}'")
 
                 if direction == "desc":
                     result.append(col.desc())

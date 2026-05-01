@@ -27,6 +27,8 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "httpx>=0.27",
+    "ruff>=0.4",
+    "mypy>=1.10",
 ]
 
 [tool.setuptools.packages.find]
@@ -38,3 +40,43 @@ jira_emulator = ["web/templates/*.html"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "B008",    # Depends() in function defaults — standard FastAPI pattern
+    "B904",    # raise ... from — noisy for HTTPException re-raises in FastAPI handlers
+    "F821",    # "Undefined name" — false positives on SQLAlchemy forward-ref strings
+    "SIM105",  # contextlib.suppress — less readable than try/except in most cases here
+    "SIM108",  # ternary operator — often reduces readability for multi-line logic
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E741"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = false
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "jira_emulator.services.issue_service",
+    "jira_emulator.services.import_service",
+    "jira_emulator.services.seed_service",
+    "jira_emulator.services.snapshot_service",
+    "jira_emulator.jql.*",
+    "jira_emulator.adf",
+    "jira_emulator.models.*",
+    "jira_emulator.routers.*",
+    "jira_emulator.web.*",
+    "jira_emulator.auth.*",
+]
+ignore_errors = true

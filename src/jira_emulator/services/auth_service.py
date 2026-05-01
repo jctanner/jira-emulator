@@ -70,9 +70,7 @@ async def validate_api_token(db: AsyncSession, raw_token: str) -> User | None:
     """Validate a Bearer token and return its owning User, or None."""
     now = datetime.utcnow()
     result = await db.execute(
-        select(ApiToken)
-        .options(selectinload(ApiToken.user))
-        .where(ApiToken.active == True)  # noqa: E712
+        select(ApiToken).options(selectinload(ApiToken.user)).where(ApiToken.active == True)  # noqa: E712
     )
     tokens = result.scalars().all()
 
@@ -87,15 +85,11 @@ async def validate_api_token(db: AsyncSession, raw_token: str) -> User | None:
     return None
 
 
-async def authenticate_basic(
-    db: AsyncSession, username_or_email: str, password: str
-) -> User | None:
+async def authenticate_basic(db: AsyncSession, username_or_email: str, password: str) -> User | None:
     """Authenticate via username/email + password. Returns User or None."""
     # Try username first, then email
     result = await db.execute(
-        select(User).where(
-            (User.username == username_or_email) | (User.email == username_or_email)
-        )
+        select(User).where((User.username == username_or_email) | (User.email == username_or_email))
     )
     user = result.scalar_one_or_none()
 

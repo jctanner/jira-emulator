@@ -1,7 +1,6 @@
 """Tests for authentication endpoints (session login, myself, user creation, password change)."""
 
 import httpx
-import pytest
 
 from tests.conftest import AUTH_HEADER
 

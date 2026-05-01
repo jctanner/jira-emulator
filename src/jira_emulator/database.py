@@ -9,6 +9,7 @@ from jira_emulator.config import get_settings
 
 class Base(DeclarativeBase):
     """Base class for all ORM models."""
+
     pass
 
 
@@ -42,9 +43,7 @@ def get_engine():
 def get_session_factory():
     global _session_factory
     if _session_factory is None:
-        _session_factory = async_sessionmaker(
-            get_engine(), class_=AsyncSession, expire_on_commit=False
-        )
+        _session_factory = async_sessionmaker(get_engine(), class_=AsyncSession, expire_on_commit=False)
     return _session_factory
 
 

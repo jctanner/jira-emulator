@@ -4,14 +4,15 @@ import tarfile
 import tempfile
 import zipfile
 from pathlib import Path
+
 import pytest
-import httpx
 
 AUTH = {"Authorization": "Basic YWRtaW46YWRtaW4="}
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 
 
 # --- API import tests (via POST /api/admin/import) ---
+
 
 @pytest.mark.asyncio
 async def test_api_import_single_issue(client):
@@ -69,10 +70,14 @@ async def test_api_import_bulk_issues(client):
     assert data["imported"] == 5
 
     # Verify via search
-    search_resp = await client.post("/rest/api/2/search", json={
-        "jql": "project = BULK",
-        "maxResults": 50,
-    }, headers=AUTH)
+    search_resp = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": "project = BULK",
+            "maxResults": 50,
+        },
+        headers=AUTH,
+    )
     assert search_resp.json()["total"] == 5
 
 
@@ -104,10 +109,14 @@ async def test_api_import_idempotent(client):
     assert resp2.json()["imported"] == 0
 
     # Verify only one issue exists
-    search_resp = await client.post("/rest/api/2/search", json={
-        "jql": "project = IDEM",
-        "maxResults": 50,
-    }, headers=AUTH)
+    search_resp = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": "project = IDEM",
+            "maxResults": 50,
+        },
+        headers=AUTH,
+    )
     assert search_resp.json()["total"] == 1
     assert search_resp.json()["issues"][0]["fields"]["summary"] == "Updated summary"
 
@@ -323,13 +332,17 @@ async def test_api_import_sequence_update(client):
     await client.post("/api/admin/import", json={"issues": issues}, headers=AUTH)
 
     # Create a new issue via API - should get key SEQTEST-21
-    create_resp = await client.post("/rest/api/2/issue", json={
-        "fields": {
-            "project": {"key": "SEQTEST"},
-            "summary": "New issue after import",
-            "issuetype": {"name": "Bug"},
-        }
-    }, headers=AUTH)
+    create_resp = await client.post(
+        "/rest/api/2/issue",
+        json={
+            "fields": {
+                "project": {"key": "SEQTEST"},
+                "summary": "New issue after import",
+                "issuetype": {"name": "Bug"},
+            }
+        },
+        headers=AUTH,
+    )
     assert create_resp.status_code == 201
     new_key = create_resp.json()["key"]
     assert new_key == "SEQTEST-21"
@@ -384,17 +397,25 @@ async def test_api_import_searchable_via_jql(client):
     await client.post("/api/admin/import", json={"issues": issues}, headers=AUTH)
 
     # Search by project
-    resp = await client.post("/rest/api/2/search", json={
-        "jql": "project = JQLTEST",
-        "maxResults": 50,
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": "project = JQLTEST",
+            "maxResults": 50,
+        },
+        headers=AUTH,
+    )
     assert resp.json()["total"] == 3
 
     # Search by label
-    resp2 = await client.post("/rest/api/2/search", json={
-        "jql": "project = JQLTEST AND labels = searchable",
-        "maxResults": 50,
-    }, headers=AUTH)
+    resp2 = await client.post(
+        "/rest/api/2/search",
+        json={
+            "jql": "project = JQLTEST AND labels = searchable",
+            "maxResults": 50,
+        },
+        headers=AUTH,
+    )
     assert resp2.json()["total"] == 3
 
 
@@ -418,12 +439,12 @@ def _create_test_archive(archive_type: str, issues: list[dict]) -> str:
     # Write some issues to root level
     if len(issues) > 0:
         with open(data_dir / "issues1.json", "w") as f:
-            json.dump(issues[:len(issues)//2] if len(issues) > 1 else issues, f)
+            json.dump(issues[: len(issues) // 2] if len(issues) > 1 else issues, f)
 
     # Write some issues to nested directory
     if len(issues) > 1:
         with open(subdir / "issues2.json", "w") as f:
-            json.dump(issues[len(issues)//2:], f)
+            json.dump(issues[len(issues) // 2 :], f)
 
     # Create the archive
     if archive_type == "zip":

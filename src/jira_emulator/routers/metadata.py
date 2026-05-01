@@ -1,6 +1,6 @@
 """Metadata listing endpoints: priorities, statuses, resolutions, issue types."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

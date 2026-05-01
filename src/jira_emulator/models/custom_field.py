@@ -23,12 +23,8 @@ class IssueCustomFieldValue(Base):
     __table_args__ = (UniqueConstraint("issue_id", "custom_field_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    issue_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False
-    )
-    custom_field_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("custom_fields.id"), nullable=False
-    )
+    issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False)
+    custom_field_id: Mapped[int] = mapped_column(Integer, ForeignKey("custom_fields.id"), nullable=False)
     value_string: Mapped[str | None] = mapped_column(Text)
     value_number: Mapped[float | None] = mapped_column(Float)
     value_date: Mapped[datetime | None] = mapped_column(DateTime)

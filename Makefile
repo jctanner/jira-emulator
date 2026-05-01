@@ -6,7 +6,7 @@ JIRA_USER ?= admin
 JIRA_TOKEN ?= jira-emulator-default-token
 CONTAINER_ENGINE ?= podman
 
-.PHONY: build run stop restart logs status clean test serve serve-mcp serve-all
+.PHONY: build run stop restart logs status clean test lint lint-fix typecheck ci serve serve-mcp serve-all
 
 build:
 	$(CONTAINER_ENGINE) build -t $(IMAGE_NAME) .
@@ -39,6 +39,20 @@ clean: stop
 
 test:
 	uv run pytest tests/ -x -q
+
+lint:
+	uv run ruff check src/ tests/ mcp_servers/
+	uv run ruff format --check src/ tests/ mcp_servers/
+	uv run mypy src/
+
+lint-fix:
+	uv run ruff check --fix src/ tests/ mcp_servers/
+	uv run ruff format src/ tests/ mcp_servers/
+
+typecheck:
+	uv run mypy src/
+
+ci: lint test
 
 serve:
 	uv run python -m jira_emulator serve --port $(PORT) --reload

@@ -12,9 +12,7 @@ class IssueHistory(Base):
     __tablename__ = "issue_history"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    issue_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False
-    )
+    issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False)
     author_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"))
     field: Mapped[str] = mapped_column(String, nullable=False)
     field_type: Mapped[str] = mapped_column(String, nullable=False, default="jira")

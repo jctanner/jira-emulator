@@ -2,10 +2,7 @@
 
 import json
 
-import pytest
-
 from jira_emulator.adf import adf_to_text, is_adf, serialize_adf, text_to_adf
-
 
 # ---------------------------------------------------------------------------
 # is_adf
@@ -65,9 +62,13 @@ class TestTextToAdf:
         assert result["content"][1]["content"] == []
 
     def test_stored_adf_string(self):
-        original = {"version": 1, "type": "doc", "content": [
-            {"type": "paragraph", "content": [{"type": "text", "text": "Hello"}]},
-        ]}
+        original = {
+            "version": 1,
+            "type": "doc",
+            "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": "Hello"}]},
+            ],
+        }
         stored = json.dumps(original)
         result = text_to_adf(stored)
         assert result == original
@@ -147,9 +148,13 @@ class TestAdfToText:
             "version": 1,
             "type": "doc",
             "content": [
-                {"type": "heading", "attrs": {"level": 1}, "content": [
-                    {"type": "text", "text": "Title"},
-                ]},
+                {
+                    "type": "heading",
+                    "attrs": {"level": 1},
+                    "content": [
+                        {"type": "text", "text": "Title"},
+                    ],
+                },
                 {"type": "paragraph", "content": [{"type": "text", "text": "Body"}]},
             ],
         }

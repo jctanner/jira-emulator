@@ -6,26 +6,25 @@ from sqlalchemy import Integer, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from jira_emulator.models.issue import Issue, IssueSequence
-from jira_emulator.models.project import Project, ProjectWorkflow
-from jira_emulator.models.issue_type import IssueType
-from jira_emulator.models.status import Status
-from jira_emulator.models.priority import Priority
-from jira_emulator.models.resolution import Resolution
-from jira_emulator.models.user import User
-from jira_emulator.models.label import Label
-from jira_emulator.models.component import Component, IssueComponent
-from jira_emulator.models.version import Version, IssueFixVersion, IssueAffectsVersion
-from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue
+from jira_emulator.adf import adf_to_text, is_adf, serialize_adf, text_to_adf
+from jira_emulator.models.attachment import Attachment
 from jira_emulator.models.comment import Comment
-from jira_emulator.models.link import IssueLink, IssueLinkType
+from jira_emulator.models.component import Component, IssueComponent
+from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue
+from jira_emulator.models.issue import Issue, IssueSequence
+from jira_emulator.models.issue_history import IssueHistory
+from jira_emulator.models.issue_type import IssueType
+from jira_emulator.models.label import Label
+from jira_emulator.models.link import IssueLink
+from jira_emulator.models.priority import Priority
+from jira_emulator.models.project import Project, ProjectWorkflow
+from jira_emulator.models.resolution import Resolution
+from jira_emulator.models.status import Status
+from jira_emulator.models.user import User
+from jira_emulator.models.version import IssueAffectsVersion, IssueFixVersion, Version
 from jira_emulator.models.watcher import Watcher
 from jira_emulator.models.workflow import Workflow, WorkflowTransition
-from jira_emulator.models.attachment import Attachment
-from jira_emulator.models.issue_history import IssueHistory
-from jira_emulator.adf import is_adf, text_to_adf, adf_to_text, serialize_adf
-from jira_emulator.services import user_service
-from jira_emulator.services import history_service
+from jira_emulator.services import history_service, user_service
 
 
 def _infer_custom_field_type(value):
@@ -39,9 +38,7 @@ def _infer_custom_field_type(value):
 
 async def _get_or_create_custom_field(db: AsyncSession, field_id: str, value):
     """Look up a CustomField by field_id; auto-create if missing."""
-    result = await db.execute(
-        select(CustomField).where(CustomField.field_id == field_id)
-    )
+    result = await db.execute(select(CustomField).where(CustomField.field_id == field_id))
     cf = result.scalar_one_or_none()
     if cf is None:
         cf = CustomField(
@@ -57,6 +54,7 @@ async def _get_or_create_custom_field(db: AsyncSession, field_id: str, value):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _format_datetime(dt: datetime | None) -> str | None:
     """Format a datetime as Jira-style ``2026-01-15T10:30:00.000+0000``."""
@@ -132,6 +130,7 @@ def _status_category_for(category: str) -> dict:
 # Eager-loading helper
 # ---------------------------------------------------------------------------
 
+
 def _issue_load_options():
     """Return selectinload options that eagerly fetch every Issue relationship."""
     return [
@@ -163,6 +162,7 @@ def _issue_load_options():
 # get_issue
 # ---------------------------------------------------------------------------
 
+
 async def get_issue(db: AsyncSession, issue_id_or_key: str) -> Issue | None:
     """Retrieve a single issue by key (e.g. ``RHAIRFE-42``) or numeric id."""
     stmt = select(Issue).options(*_issue_load_options())
@@ -182,6 +182,7 @@ async def get_issue(db: AsyncSession, issue_id_or_key: str) -> Issue | None:
 # ---------------------------------------------------------------------------
 # create_issue
 # ---------------------------------------------------------------------------
+
 
 async def create_issue(
     db: AsyncSession,
@@ -216,9 +217,7 @@ async def create_issue(
         raise ValueError(f"Issue type '{issue_type_name}' not found")
 
     # -- allocate key --
-    result = await db.execute(
-        select(IssueSequence).where(IssueSequence.project_id == project.id)
-    )
+    result = await db.execute(select(IssueSequence).where(IssueSequence.project_id == project.id))
     seq = result.scalar_one_or_none()
     if seq is None:
         seq = IssueSequence(project_id=project.id, next_number=1)
@@ -231,11 +230,9 @@ async def create_issue(
     prefix = f"{project.key}-"
     prefix_len = len(prefix)
     max_result = await db.execute(
-        select(
-            func.max(
-                func.cast(func.substr(Issue.key, prefix_len + 1), Integer)
-            )
-        ).where(Issue.project_id == project.id)
+        select(func.max(func.cast(func.substr(Issue.key, prefix_len + 1), Integer))).where(
+            Issue.project_id == project.id
+        )
     )
     max_existing = max_result.scalar_one_or_none()
     if max_existing is not None and seq.next_number <= max_existing:
@@ -269,9 +266,7 @@ async def create_issue(
     priority: Priority | None = None
     priority_data = fields.get("priority")
     if priority_data and priority_data.get("name"):
-        result = await db.execute(
-            select(Priority).where(Priority.name == priority_data["name"])
-        )
+        result = await db.execute(select(Priority).where(Priority.name == priority_data["name"]))
         priority = result.scalar_one_or_none()
 
     # -- initial status (via project workflow) --
@@ -282,12 +277,13 @@ async def create_issue(
     result = await db.execute(
         select(ProjectWorkflow)
         .options(
-            selectinload(ProjectWorkflow.workflow).selectinload(Workflow.transitions).selectinload(WorkflowTransition.from_status),
+            selectinload(ProjectWorkflow.workflow)
+            .selectinload(Workflow.transitions)
+            .selectinload(WorkflowTransition.from_status),
         )
         .where(
             ProjectWorkflow.project_id == project.id,
-            (ProjectWorkflow.issue_type_id == issue_type.id)
-            | (ProjectWorkflow.issue_type_id.is_(None)),
+            (ProjectWorkflow.issue_type_id == issue_type.id) | (ProjectWorkflow.issue_type_id.is_(None)),
         )
         .order_by(ProjectWorkflow.issue_type_id.desc())  # prefer specific match
     )
@@ -414,6 +410,7 @@ async def create_issue(
             cfv.value_string = str(field_value) if field_value is not None else None
         elif cf.field_type in ("select", "multiselect"):
             import json
+
             if isinstance(field_value, (dict, list)):
                 cfv.value_json = json.dumps(field_value)
             else:
@@ -430,6 +427,7 @@ async def create_issue(
 # ---------------------------------------------------------------------------
 # update_issue
 # ---------------------------------------------------------------------------
+
 
 async def update_issue(
     db: AsyncSession,
@@ -462,7 +460,11 @@ async def update_issue(
 
 
 async def _apply_field_updates(
-    db: AsyncSession, issue: Issue, fields: dict, *, author_id: int | None = None,
+    db: AsyncSession,
+    issue: Issue,
+    fields: dict,
+    *,
+    author_id: int | None = None,
 ) -> None:
     """Apply simple field-level updates to *issue*."""
 
@@ -472,7 +474,14 @@ async def _apply_field_updates(
         if old != new:
             issue.summary = new
             await history_service.record_change(
-                db, issue.id, author_id, "summary", old, None, new, None,
+                db,
+                issue.id,
+                author_id,
+                "summary",
+                old,
+                None,
+                new,
+                None,
             )
 
     if "description" in fields:
@@ -481,7 +490,14 @@ async def _apply_field_updates(
         if old != new:
             issue.description = new
             await history_service.record_change(
-                db, issue.id, author_id, "description", old, None, new, None,
+                db,
+                issue.id,
+                author_id,
+                "description",
+                old,
+                None,
+                new,
+                None,
             )
 
     # priority
@@ -490,23 +506,33 @@ async def _apply_field_updates(
         old_id = str(issue.priority_id) if issue.priority_id else None
         priority_data = fields["priority"]
         if priority_data and priority_data.get("name"):
-            result = await db.execute(
-                select(Priority).where(Priority.name == priority_data["name"])
-            )
+            result = await db.execute(select(Priority).where(Priority.name == priority_data["name"]))
             priority = result.scalar_one_or_none()
             if priority:
                 issue.priority_id = priority.id
                 if old_name != priority.name:
                     await history_service.record_change(
-                        db, issue.id, author_id, "priority",
-                        old_name, old_id, priority.name, str(priority.id),
+                        db,
+                        issue.id,
+                        author_id,
+                        "priority",
+                        old_name,
+                        old_id,
+                        priority.name,
+                        str(priority.id),
                     )
         else:
             issue.priority_id = None
             if old_name is not None:
                 await history_service.record_change(
-                    db, issue.id, author_id, "priority",
-                    old_name, old_id, None, None,
+                    db,
+                    issue.id,
+                    author_id,
+                    "priority",
+                    old_name,
+                    old_id,
+                    None,
+                    None,
                 )
 
     # assignee
@@ -523,15 +549,27 @@ async def _apply_field_updates(
             issue.assignee_id = assignee.id
             if old_id != assignee.username:
                 await history_service.record_change(
-                    db, issue.id, author_id, "assignee",
-                    old_name, old_id, assignee.display_name, assignee.username,
+                    db,
+                    issue.id,
+                    author_id,
+                    "assignee",
+                    old_name,
+                    old_id,
+                    assignee.display_name,
+                    assignee.username,
                 )
         else:
             issue.assignee_id = None
             if old_id is not None:
                 await history_service.record_change(
-                    db, issue.id, author_id, "assignee",
-                    old_name, old_id, None, None,
+                    db,
+                    issue.id,
+                    author_id,
+                    "assignee",
+                    old_name,
+                    old_id,
+                    None,
+                    None,
                 )
 
     # reporter
@@ -548,8 +586,14 @@ async def _apply_field_updates(
             issue.reporter_id = reporter.id
             if old_id != reporter.username:
                 await history_service.record_change(
-                    db, issue.id, author_id, "reporter",
-                    old_name, old_id, reporter.display_name, reporter.username,
+                    db,
+                    issue.id,
+                    author_id,
+                    "reporter",
+                    old_name,
+                    old_id,
+                    reporter.display_name,
+                    reporter.username,
                 )
 
     # resolution
@@ -558,25 +602,35 @@ async def _apply_field_updates(
         old_id = str(issue.resolution_id) if issue.resolution_id else None
         resolution_data = fields["resolution"]
         if resolution_data and resolution_data.get("name"):
-            result = await db.execute(
-                select(Resolution).where(Resolution.name == resolution_data["name"])
-            )
+            result = await db.execute(select(Resolution).where(Resolution.name == resolution_data["name"]))
             resolution = result.scalar_one_or_none()
             if resolution:
                 issue.resolution_id = resolution.id
                 issue.resolved_at = datetime.utcnow()
                 if old_name != resolution.name:
                     await history_service.record_change(
-                        db, issue.id, author_id, "resolution",
-                        old_name, old_id, resolution.name, str(resolution.id),
+                        db,
+                        issue.id,
+                        author_id,
+                        "resolution",
+                        old_name,
+                        old_id,
+                        resolution.name,
+                        str(resolution.id),
                     )
         else:
             issue.resolution_id = None
             issue.resolved_at = None
             if old_name is not None:
                 await history_service.record_change(
-                    db, issue.id, author_id, "resolution",
-                    old_name, old_id, None, None,
+                    db,
+                    issue.id,
+                    author_id,
+                    "resolution",
+                    old_name,
+                    old_id,
+                    None,
+                    None,
                 )
 
     # labels (full replacement)
@@ -594,9 +648,14 @@ async def _apply_field_updates(
                 seen.add(label_text)
         if old_labels != new_labels:
             await history_service.record_change(
-                db, issue.id, author_id, "labels",
-                " ".join(old_labels) if old_labels else None, None,
-                " ".join(new_labels) if new_labels else None, None,
+                db,
+                issue.id,
+                author_id,
+                "labels",
+                " ".join(old_labels) if old_labels else None,
+                None,
+                " ".join(new_labels) if new_labels else None,
+                None,
             )
 
     # components (full replacement)
@@ -699,6 +758,7 @@ async def _apply_field_updates(
                 cfv.value_string = str(field_value)
             elif cf.field_type in ("select", "multiselect"):
                 import json
+
                 if isinstance(field_value, (dict, list)):
                     cfv.value_json = json.dumps(field_value)
                 else:
@@ -708,7 +768,11 @@ async def _apply_field_updates(
 
 
 async def _apply_update_ops(
-    db: AsyncSession, issue: Issue, update_ops: dict, *, author_id: int | None = None,
+    db: AsyncSession,
+    issue: Issue,
+    update_ops: dict,
+    *,
+    author_id: int | None = None,
 ) -> None:
     """Apply Jira ``update``-style operations (add/remove/set)."""
 
@@ -735,15 +799,18 @@ async def _apply_update_ops(
                         seen.add(label_text)
         await db.flush()
         # Re-query to get current labels after ops
-        result = await db.execute(
-            select(Label).where(Label.issue_id == issue.id)
-        )
+        result = await db.execute(select(Label).where(Label.issue_id == issue.id))
         new_labels = sorted(lbl.label for lbl in result.scalars().all())
         if old_labels != new_labels:
             await history_service.record_change(
-                db, issue.id, author_id, "labels",
-                " ".join(old_labels) if old_labels else None, None,
-                " ".join(new_labels) if new_labels else None, None,
+                db,
+                issue.id,
+                author_id,
+                "labels",
+                " ".join(old_labels) if old_labels else None,
+                None,
+                " ".join(new_labels) if new_labels else None,
+                None,
             )
 
     # components
@@ -828,14 +895,21 @@ async def _apply_update_ops(
                 db.add(comment)
                 await db.flush()
                 await history_service.record_change(
-                    db, issue.id, author_id, "Comment",
-                    None, None, body, str(comment.id),
+                    db,
+                    issue.id,
+                    author_id,
+                    "Comment",
+                    None,
+                    None,
+                    body,
+                    str(comment.id),
                 )
 
 
 # ---------------------------------------------------------------------------
 # delete_issue
 # ---------------------------------------------------------------------------
+
 
 async def delete_issue(db: AsyncSession, issue_id_or_key: str) -> bool:
     """Delete an issue.  Returns ``True`` if deleted, ``False`` if not found."""
@@ -850,6 +924,7 @@ async def delete_issue(db: AsyncSession, issue_id_or_key: str) -> bool:
 # ---------------------------------------------------------------------------
 # format_issue_response
 # ---------------------------------------------------------------------------
+
 
 async def format_issue_response(
     issue: Issue,
@@ -956,20 +1031,18 @@ async def format_issue_response(
     # -- comments --
     comment_list = []
     for c in issue.comments:
-        comment_list.append({
-            "self": f"{base_url}/rest/api/2/issue/{issue.id}/comment/{c.id}",
-            "id": str(c.id),
-            "author": _format_user(c.author, base_url),
-            "body": _format_rich_field(c.body, api_version),
-            "updateAuthor": _format_user(c.author, base_url),
-            "created": _format_datetime(c.created_at),
-            "updated": _format_datetime(c.updated_at),
-            "visibility": (
-                {"type": c.visibility_type, "value": c.visibility_value}
-                if c.visibility_type
-                else None
-            ),
-        })
+        comment_list.append(
+            {
+                "self": f"{base_url}/rest/api/2/issue/{issue.id}/comment/{c.id}",
+                "id": str(c.id),
+                "author": _format_user(c.author, base_url),
+                "body": _format_rich_field(c.body, api_version),
+                "updateAuthor": _format_user(c.author, base_url),
+                "created": _format_datetime(c.created_at),
+                "updated": _format_datetime(c.updated_at),
+                "visibility": ({"type": c.visibility_type, "value": c.visibility_value} if c.visibility_type else None),
+            }
+        )
 
     comment_section = {
         "comments": comment_list,
@@ -985,47 +1058,51 @@ async def format_issue_response(
     # matching Jira's convention where the linked issue shown is always the
     # other end, not the current issue.
     for ol in issue.outward_links:
-        issuelinks.append({
-            "id": str(ol.id),
-            "self": f"{base_url}/rest/api/2/issueLink/{ol.id}",
-            "type": {
-                "id": str(ol.link_type.id),
-                "name": ol.link_type.name,
-                "inward": ol.link_type.inward_description or "",
-                "outward": ol.link_type.outward_description or "",
-                "self": f"{base_url}/rest/api/2/issueLinkType/{ol.link_type.id}",
-            },
-            "outwardIssue": {
-                "id": str(ol.inward_issue.id),
-                "key": ol.inward_issue.key,
-                "self": f"{base_url}/rest/api/2/issue/{ol.inward_issue.id}",
-                "fields": {
-                    "summary": ol.inward_issue.summary,
+        issuelinks.append(
+            {
+                "id": str(ol.id),
+                "self": f"{base_url}/rest/api/2/issueLink/{ol.id}",
+                "type": {
+                    "id": str(ol.link_type.id),
+                    "name": ol.link_type.name,
+                    "inward": ol.link_type.inward_description or "",
+                    "outward": ol.link_type.outward_description or "",
+                    "self": f"{base_url}/rest/api/2/issueLinkType/{ol.link_type.id}",
                 },
-            },
-        })
+                "outwardIssue": {
+                    "id": str(ol.inward_issue.id),
+                    "key": ol.inward_issue.key,
+                    "self": f"{base_url}/rest/api/2/issue/{ol.inward_issue.id}",
+                    "fields": {
+                        "summary": ol.inward_issue.summary,
+                    },
+                },
+            }
+        )
     # inward_links: links where this issue is the inward side.
     # Show the OTHER issue (outward_issue) as inwardIssue in the response.
     for il in issue.inward_links:
-        issuelinks.append({
-            "id": str(il.id),
-            "self": f"{base_url}/rest/api/2/issueLink/{il.id}",
-            "type": {
-                "id": str(il.link_type.id),
-                "name": il.link_type.name,
-                "inward": il.link_type.inward_description or "",
-                "outward": il.link_type.outward_description or "",
-                "self": f"{base_url}/rest/api/2/issueLinkType/{il.link_type.id}",
-            },
-            "inwardIssue": {
-                "id": str(il.outward_issue.id),
-                "key": il.outward_issue.key,
-                "self": f"{base_url}/rest/api/2/issue/{il.outward_issue.id}",
-                "fields": {
-                    "summary": il.outward_issue.summary,
+        issuelinks.append(
+            {
+                "id": str(il.id),
+                "self": f"{base_url}/rest/api/2/issueLink/{il.id}",
+                "type": {
+                    "id": str(il.link_type.id),
+                    "name": il.link_type.name,
+                    "inward": il.link_type.inward_description or "",
+                    "outward": il.link_type.outward_description or "",
+                    "self": f"{base_url}/rest/api/2/issueLinkType/{il.link_type.id}",
                 },
-            },
-        })
+                "inwardIssue": {
+                    "id": str(il.outward_issue.id),
+                    "key": il.outward_issue.key,
+                    "self": f"{base_url}/rest/api/2/issue/{il.outward_issue.id}",
+                    "fields": {
+                        "summary": il.outward_issue.summary,
+                    },
+                },
+            }
+        )
 
     # -- parent --
     parent_ref = None
@@ -1053,9 +1130,7 @@ async def format_issue_response(
     all_custom_fields = list(result.scalars().all())
 
     # Build a map of custom_field_id -> IssueCustomFieldValue for this issue
-    cf_value_map: dict[int, IssueCustomFieldValue] = {
-        cfv.custom_field_id: cfv for cfv in issue.custom_field_values
-    }
+    cf_value_map: dict[int, IssueCustomFieldValue] = {cfv.custom_field_id: cfv for cfv in issue.custom_field_values}
 
     custom_fields_dict: dict[str, object] = {}
     for cf in all_custom_fields:
@@ -1066,6 +1141,7 @@ async def format_issue_response(
             custom_fields_dict[cf.field_id] = cfv.value_number
         elif cf.field_type in ("select", "multiselect") and cfv.value_json:
             import json
+
             try:
                 custom_fields_dict[cf.field_id] = json.loads(cfv.value_json)
             except (json.JSONDecodeError, TypeError):
@@ -1130,11 +1206,29 @@ async def format_issue_response(
         if fields_filter == ["*navigable"]:
             # Navigable fields are the standard display fields
             navigable = {
-                "issuetype", "project", "summary", "description", "status",
-                "priority", "resolution", "assignee", "reporter", "creator",
-                "labels", "components", "fixVersions", "versions", "comment",
-                "issuelinks", "parent", "duedate", "created", "updated",
-                "resolutiondate", "watches", "subtasks",
+                "issuetype",
+                "project",
+                "summary",
+                "description",
+                "status",
+                "priority",
+                "resolution",
+                "assignee",
+                "reporter",
+                "creator",
+                "labels",
+                "components",
+                "fixVersions",
+                "versions",
+                "comment",
+                "issuelinks",
+                "parent",
+                "duedate",
+                "created",
+                "updated",
+                "resolutiondate",
+                "watches",
+                "subtasks",
             }
             filtered: dict[str, object] = {}
             for f in navigable:
@@ -1160,25 +1254,27 @@ async def format_issue_response(
             return (entry.author_id, ts)
 
         sorted_entries = sorted(history_entries, key=lambda e: (e.created_at, e.id))
-        for group_key, group_iter in groupby(sorted_entries, key=_group_key):
+        for _, group_iter in groupby(sorted_entries, key=_group_key):
             items_in_group = list(group_iter)
             first = items_in_group[0]
-            changelog_histories.append({
-                "id": str(first.id),
-                "author": _format_user(first.author, base_url),
-                "created": _format_datetime(first.created_at),
-                "items": [
-                    {
-                        "field": entry.field,
-                        "fieldtype": entry.field_type,
-                        "from": entry.from_id,
-                        "fromString": entry.from_value,
-                        "to": entry.to_id,
-                        "toString": entry.to_value,
-                    }
-                    for entry in items_in_group
-                ],
-            })
+            changelog_histories.append(
+                {
+                    "id": str(first.id),
+                    "author": _format_user(first.author, base_url),
+                    "created": _format_datetime(first.created_at),
+                    "items": [
+                        {
+                            "field": entry.field,
+                            "fieldtype": entry.field_type,
+                            "from": entry.from_id,
+                            "fromString": entry.from_value,
+                            "to": entry.to_id,
+                            "toString": entry.to_value,
+                        }
+                        for entry in items_in_group
+                    ],
+                }
+            )
 
     changelog = {
         "startAt": 0,

@@ -19,20 +19,10 @@ class IssueLink(Base):
     __tablename__ = "issue_links"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    link_type_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("issue_link_types.id"), nullable=False
-    )
-    inward_issue_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False
-    )
-    outward_issue_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False
-    )
+    link_type_id: Mapped[int] = mapped_column(Integer, ForeignKey("issue_link_types.id"), nullable=False)
+    inward_issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False)
+    outward_issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False)
 
     link_type: Mapped["IssueLinkType"] = relationship()
-    inward_issue: Mapped["Issue"] = relationship(
-        foreign_keys=[inward_issue_id], overlaps="inward_links"
-    )
-    outward_issue: Mapped["Issue"] = relationship(
-        foreign_keys=[outward_issue_id], overlaps="outward_links"
-    )
+    inward_issue: Mapped["Issue"] = relationship(foreign_keys=[inward_issue_id], overlaps="inward_links")
+    outward_issue: Mapped["Issue"] = relationship(foreign_keys=[outward_issue_id], overlaps="outward_links")

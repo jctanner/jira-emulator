@@ -22,9 +22,5 @@ class Sprint(Base):
 class IssueSprint(Base):
     __tablename__ = "issue_sprints"
 
-    issue_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True
-    )
-    sprint_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("sprints.id"), primary_key=True
-    )
+    issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True)
+    sprint_id: Mapped[int] = mapped_column(Integer, ForeignKey("sprints.id"), primary_key=True)

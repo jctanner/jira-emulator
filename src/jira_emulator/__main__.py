@@ -16,9 +16,7 @@ def main():
     serve_parser = subparsers.add_parser("serve", help="Start the HTTP server")
     serve_parser.add_argument("--host", default=None, help="Listen address")
     serve_parser.add_argument("--port", type=int, default=None, help="Listen port")
-    serve_parser.add_argument(
-        "--reload", action="store_true", help="Enable auto-reload for development"
-    )
+    serve_parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
 
     # import command (stub for Phase 3)
     import_parser = subparsers.add_parser("import", help="Import issues from JSON")
@@ -37,6 +35,7 @@ def main():
 
 def _run_server(args):
     import uvicorn
+
     from jira_emulator.config import get_settings
 
     settings = get_settings()
@@ -55,8 +54,9 @@ def _run_server(args):
 def _run_import(args):
     """Import issues from a JSON file or directory."""
     import asyncio
-    from jira_emulator.database import init_db, get_session_factory, reset_engine
-    from jira_emulator.services.import_service import import_file, import_directory
+
+    from jira_emulator.database import get_session_factory, init_db
+    from jira_emulator.services.import_service import import_directory, import_file
 
     async def _do_import():
         # Import models so tables are known
@@ -74,7 +74,7 @@ def _run_import(args):
         return result
 
     result = asyncio.run(_do_import())
-    print(f"Import complete:")
+    print("Import complete:")
     print(f"  Imported: {result.imported}")
     print(f"  Updated:  {result.updated}")
     if result.projects_created:

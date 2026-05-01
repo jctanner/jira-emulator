@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from jira_emulator.adf import serialize_adf
 from jira_emulator.auth.middleware import get_current_user
 from jira_emulator.config import get_settings
 from jira_emulator.database import get_db
@@ -18,8 +19,7 @@ from jira_emulator.schemas.issue import (
     TransitionRequest,
     UpdateIssueRequest,
 )
-from jira_emulator.adf import serialize_adf
-from jira_emulator.services import issue_service, history_service
+from jira_emulator.services import history_service, issue_service
 from jira_emulator.services.issue_service import _format_rich_field
 from jira_emulator.services.user_service import get_or_create_user
 
@@ -109,7 +109,10 @@ async def get_issue(
         fields_filter = [f.strip() for f in fields.split(",")]
 
     return await issue_service.format_issue_response(
-        issue, base_url, db, fields_filter=fields_filter,
+        issue,
+        base_url,
+        db,
+        fields_filter=fields_filter,
         api_version=_get_api_version(request),
     )
 
@@ -197,28 +200,24 @@ async def list_comments(
     # Get total count
     from sqlalchemy import func
 
-    count_result = await db.execute(
-        select(func.count()).select_from(Comment).where(Comment.issue_id == issue.id)
-    )
+    count_result = await db.execute(select(func.count()).select_from(Comment).where(Comment.issue_id == issue.id))
     total = count_result.scalar() or 0
 
     api_version = _get_api_version(request)
     comment_dicts = []
     for c in comments:
-        comment_dicts.append({
-            "self": f"{base_url}/rest/api/2/issue/{issue.id}/comment/{c.id}",
-            "id": str(c.id),
-            "author": _format_user(c.author, base_url),
-            "updateAuthor": _format_user(c.author, base_url),
-            "body": _format_rich_field(c.body, api_version),
-            "created": _format_datetime(c.created_at),
-            "updated": _format_datetime(c.updated_at),
-            "visibility": (
-                {"type": c.visibility_type, "value": c.visibility_value}
-                if c.visibility_type
-                else None
-            ),
-        })
+        comment_dicts.append(
+            {
+                "self": f"{base_url}/rest/api/2/issue/{issue.id}/comment/{c.id}",
+                "id": str(c.id),
+                "author": _format_user(c.author, base_url),
+                "updateAuthor": _format_user(c.author, base_url),
+                "body": _format_rich_field(c.body, api_version),
+                "created": _format_datetime(c.created_at),
+                "updated": _format_datetime(c.updated_at),
+                "visibility": ({"type": c.visibility_type, "value": c.visibility_value} if c.visibility_type else None),
+            }
+        )
 
     return {
         "startAt": startAt,
@@ -270,8 +269,14 @@ async def add_comment(
     await db.flush()
 
     await history_service.record_change(
-        db, issue.id, author.id, "Comment",
-        None, None, comment.body, str(comment.id),
+        db,
+        issue.id,
+        author.id,
+        "Comment",
+        None,
+        None,
+        comment.body,
+        str(comment.id),
     )
 
     api_version = _get_api_version(request)
@@ -318,18 +323,20 @@ async def get_transitions(
     for t in transitions:
         to_status = t.to_status
         cat = _status_category_for(to_status.category)
-        trans_list.append({
-            "id": str(t.id),
-            "name": t.name,
-            "to": {
-                "self": f"{base_url}/rest/api/2/status/{to_status.id}",
-                "description": "",
-                "iconUrl": "",
-                "name": to_status.name,
-                "id": str(to_status.id),
-                "statusCategory": cat,
-            },
-        })
+        trans_list.append(
+            {
+                "id": str(t.id),
+                "name": t.name,
+                "to": {
+                    "self": f"{base_url}/rest/api/2/status/{to_status.id}",
+                    "description": "",
+                    "iconUrl": "",
+                    "name": to_status.name,
+                    "id": str(to_status.id),
+                    "statusCategory": cat,
+                },
+            }
+        )
 
     return {"expand": "transitions", "transitions": trans_list}
 
@@ -355,7 +362,9 @@ async def perform_transition(
     transition_id = int(body.transition.get("id", 0))
     try:
         await workflow_service.execute_transition(
-            db, issue, transition_id,
+            db,
+            issue,
+            transition_id,
             author_id=current_user.id,
             fields=body.fields,
         )
@@ -393,11 +402,7 @@ async def get_watchers(
 
     from sqlalchemy.orm import selectinload
 
-    result = await db.execute(
-        select(Watcher)
-        .options(selectinload(Watcher.user))
-        .where(Watcher.issue_id == issue.id)
-    )
+    result = await db.execute(select(Watcher).options(selectinload(Watcher.user)).where(Watcher.issue_id == issue.id))
     watchers = list(result.scalars().all())
 
     watcher_list = []

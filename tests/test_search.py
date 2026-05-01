@@ -1,14 +1,13 @@
 """Tests for JQL search endpoints (POST and GET)."""
 
 import httpx
-import pytest
 
 from tests.conftest import AUTH_HEADER
-
 
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
 
 async def _create_issues(client: httpx.AsyncClient, count: int = 3) -> list[dict]:
     """Create *count* issues in RHOAIENG and return their creation responses."""

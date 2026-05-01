@@ -1,7 +1,6 @@
 """Tests for Personal Access Token (PAT) endpoints."""
 
 import httpx
-import pytest
 
 from tests.conftest import AUTH_HEADER
 

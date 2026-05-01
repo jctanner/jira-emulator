@@ -100,9 +100,6 @@ async def search_assignable_users(
     """Search for users that can be assigned to issues."""
     stmt = select(User).where(User.active == True)  # noqa: E712
     if username:
-        stmt = stmt.where(
-            (User.username.ilike(f"%{username}%"))
-            | (User.display_name.ilike(f"%{username}%"))
-        )
+        stmt = stmt.where((User.username.ilike(f"%{username}%")) | (User.display_name.ilike(f"%{username}%")))
     result = await db.execute(stmt.limit(50))
     return list(result.scalars().all())

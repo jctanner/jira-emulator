@@ -10,16 +10,30 @@ from __future__ import annotations
 
 import json
 
-
 # Block-level node types that should be followed by a newline when
 # extracting plain text.
-_BLOCK_TYPES = frozenset({
-    "paragraph", "heading", "blockquote", "codeBlock",
-    "rule", "mediaSingle", "mediaGroup", "decisionList",
-    "taskList", "bulletList", "orderedList", "listItem",
-    "table", "tableRow", "tableCell", "tableHeader",
-    "panel", "expand",
-})
+_BLOCK_TYPES = frozenset(
+    {
+        "paragraph",
+        "heading",
+        "blockquote",
+        "codeBlock",
+        "rule",
+        "mediaSingle",
+        "mediaGroup",
+        "decisionList",
+        "taskList",
+        "bulletList",
+        "orderedList",
+        "listItem",
+        "table",
+        "tableRow",
+        "tableCell",
+        "tableHeader",
+        "panel",
+        "expand",
+    }
+)
 
 
 def is_adf(value: str | None) -> bool:
@@ -55,10 +69,12 @@ def text_to_adf(text: str | None) -> dict | None:
     content = []
     for line in lines:
         if line:
-            content.append({
-                "type": "paragraph",
-                "content": [{"type": "text", "text": line}],
-            })
+            content.append(
+                {
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": line}],
+                }
+            )
         else:
             # Empty line → empty paragraph
             content.append({"type": "paragraph", "content": []})

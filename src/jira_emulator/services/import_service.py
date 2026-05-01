@@ -12,18 +12,18 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from jira_emulator.models.issue import Issue, IssueSequence
-from jira_emulator.models.project import Project
-from jira_emulator.models.issue_type import IssueType
-from jira_emulator.models.status import Status
-from jira_emulator.models.priority import Priority
-from jira_emulator.models.resolution import Resolution
-from jira_emulator.models.user import User
-from jira_emulator.models.label import Label
 from jira_emulator.models.component import Component, IssueComponent
-from jira_emulator.models.version import Version, IssueFixVersion, IssueAffectsVersion
 from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue
-from jira_emulator.models.sprint import Sprint, IssueSprint
+from jira_emulator.models.issue import Issue, IssueSequence
+from jira_emulator.models.issue_type import IssueType
+from jira_emulator.models.label import Label
+from jira_emulator.models.priority import Priority
+from jira_emulator.models.project import Project
+from jira_emulator.models.resolution import Resolution
+from jira_emulator.models.sprint import IssueSprint, Sprint
+from jira_emulator.models.status import Status
+from jira_emulator.models.user import User
+from jira_emulator.models.version import IssueAffectsVersion, IssueFixVersion, Version
 from jira_emulator.services.user_service import get_or_create_user, slugify_username
 
 logger = logging.getLogger(__name__)
@@ -72,12 +72,7 @@ def _parse_datetime(s: str | None) -> datetime | None:
     if not s:
         return None
     try:
-        return (
-            datetime.fromisoformat(
-                s.replace("+0000", "+00:00").replace("Z", "+00:00")
-            )
-            .replace(tzinfo=None)
-        )
+        return datetime.fromisoformat(s.replace("+0000", "+00:00").replace("Z", "+00:00")).replace(tzinfo=None)
     except (ValueError, AttributeError):
         return None
 
@@ -149,9 +144,7 @@ async def _get_or_create_resolution(db: AsyncSession, name: str) -> Resolution:
     return r
 
 
-async def _get_or_create_user_from_display(
-    db: AsyncSession, display_name: str, result: ImportResult
-) -> User:
+async def _get_or_create_user_from_display(db: AsyncSession, display_name: str, result: ImportResult) -> User:
     """Resolve a display name to a User, creating one if necessary."""
     username = slugify_username(display_name)
     # Check if user already exists before calling get_or_create_user so we can
@@ -164,12 +157,8 @@ async def _get_or_create_user_from_display(
     return user
 
 
-async def _get_or_create_component(
-    db: AsyncSession, project_id: int, name: str
-) -> Component:
-    stmt = select(Component).where(
-        Component.project_id == project_id, Component.name == name
-    )
+async def _get_or_create_component(db: AsyncSession, project_id: int, name: str) -> Component:
+    stmt = select(Component).where(Component.project_id == project_id, Component.name == name)
     row = (await db.execute(stmt)).scalar_one_or_none()
     if row:
         return row
@@ -179,12 +168,8 @@ async def _get_or_create_component(
     return c
 
 
-async def _get_or_create_version(
-    db: AsyncSession, project_id: int, name: str
-) -> Version:
-    stmt = select(Version).where(
-        Version.project_id == project_id, Version.name == name
-    )
+async def _get_or_create_version(db: AsyncSession, project_id: int, name: str) -> Version:
+    stmt = select(Version).where(Version.project_id == project_id, Version.name == name)
     row = (await db.execute(stmt)).scalar_one_or_none()
     if row:
         return row
@@ -205,9 +190,7 @@ async def _get_or_create_sprint(db: AsyncSession, name: str) -> Sprint:
     return sp
 
 
-async def _get_or_create_custom_field(
-    db: AsyncSession, field_id: str, name: str, field_type: str
-) -> CustomField:
+async def _get_or_create_custom_field(db: AsyncSession, field_id: str, name: str, field_type: str) -> CustomField:
     stmt = select(CustomField).where(CustomField.field_id == field_id)
     row = (await db.execute(stmt)).scalar_one_or_none()
     if row:
@@ -345,9 +328,7 @@ async def import_issue(
         # 11. Components
         # ------------------------------------------------------------------
         # Delete old associations
-        existing_ic_stmt = select(IssueComponent).where(
-            IssueComponent.issue_id == issue.id
-        )
+        existing_ic_stmt = select(IssueComponent).where(IssueComponent.issue_id == issue.id)
         for ic in (await db.execute(existing_ic_stmt)).scalars().all():
             await db.delete(ic)
         await db.flush()
@@ -363,9 +344,7 @@ async def import_issue(
         # ------------------------------------------------------------------
         # 12. Fix versions
         # ------------------------------------------------------------------
-        existing_fv_stmt = select(IssueFixVersion).where(
-            IssueFixVersion.issue_id == issue.id
-        )
+        existing_fv_stmt = select(IssueFixVersion).where(IssueFixVersion.issue_id == issue.id)
         for fv in (await db.execute(existing_fv_stmt)).scalars().all():
             await db.delete(fv)
         await db.flush()
@@ -381,9 +360,7 @@ async def import_issue(
         # ------------------------------------------------------------------
         # 13. Affects versions
         # ------------------------------------------------------------------
-        existing_av_stmt = select(IssueAffectsVersion).where(
-            IssueAffectsVersion.issue_id == issue.id
-        )
+        existing_av_stmt = select(IssueAffectsVersion).where(IssueAffectsVersion.issue_id == issue.id)
         for av in (await db.execute(existing_av_stmt)).scalars().all():
             await db.delete(av)
         await db.flush()
@@ -400,9 +377,7 @@ async def import_issue(
         # 14. Custom fields
         # ------------------------------------------------------------------
         # Remove old custom field values for this issue
-        existing_cf_stmt = select(IssueCustomFieldValue).where(
-            IssueCustomFieldValue.issue_id == issue.id
-        )
+        existing_cf_stmt = select(IssueCustomFieldValue).where(IssueCustomFieldValue.issue_id == issue.id)
         for cfv in (await db.execute(existing_cf_stmt)).scalars().all():
             await db.delete(cfv)
         await db.flush()
@@ -419,13 +394,9 @@ async def import_issue(
                 "number": "number",
                 "json": "multiselect",
             }
-            cf = await _get_or_create_custom_field(
-                db, cf_field_id, cf_name, cf_type_map.get(value_type, "string")
-            )
+            cf = await _get_or_create_custom_field(db, cf_field_id, cf_name, cf_type_map.get(value_type, "string"))
 
-            cfv = IssueCustomFieldValue(
-                issue_id=issue.id, custom_field_id=cf.id
-            )
+            cfv = IssueCustomFieldValue(issue_id=issue.id, custom_field_id=cf.id)
             if value_type == "number":
                 try:
                     cfv.value_number = float(raw_value)
@@ -454,12 +425,8 @@ async def import_issue(
             else:
                 inferred_type = "string"
 
-            cf = await _get_or_create_custom_field(
-                db, raw_key, raw_key, inferred_type
-            )
-            cfv = IssueCustomFieldValue(
-                issue_id=issue.id, custom_field_id=cf.id
-            )
+            cf = await _get_or_create_custom_field(db, raw_key, raw_key, inferred_type)
+            cfv = IssueCustomFieldValue(issue_id=issue.id, custom_field_id=cf.id)
             if inferred_type == "number":
                 try:
                     cfv.value_number = float(raw_value)
@@ -476,9 +443,7 @@ async def import_issue(
         # ------------------------------------------------------------------
         # 15. Sprints
         # ------------------------------------------------------------------
-        existing_is_stmt = select(IssueSprint).where(
-            IssueSprint.issue_id == issue.id
-        )
+        existing_is_stmt = select(IssueSprint).where(IssueSprint.issue_id == issue.id)
         for isp in (await db.execute(existing_is_stmt)).scalars().all():
             await db.delete(isp)
         await db.flush()
@@ -503,9 +468,7 @@ async def import_issue(
 # ---------------------------------------------------------------------------
 # Epic-link resolution (second pass)
 # ---------------------------------------------------------------------------
-async def _resolve_epic_links(
-    db: AsyncSession, epic_links: dict[str, str]
-) -> list[str]:
+async def _resolve_epic_links(db: AsyncSession, epic_links: dict[str, str]) -> list[str]:
     """Resolve deferred epic_link references by setting parent_id.
 
     Returns a list of error messages for links that could not be resolved.
@@ -522,9 +485,7 @@ async def _resolve_epic_links(
             parent_stmt = select(Issue).where(Issue.key == epic_key)
             parent = (await db.execute(parent_stmt)).scalar_one_or_none()
             if parent is None:
-                errors.append(
-                    f"{issue_key}: epic {epic_key} not found, cannot set parent"
-                )
+                errors.append(f"{issue_key}: epic {epic_key} not found, cannot set parent")
                 continue
 
             child.parent_id = parent.id
@@ -571,26 +532,19 @@ async def import_issues(db: AsyncSession, issues: list[dict]) -> ImportResult:
         # Find the maximum issue number for this project
         from sqlalchemy import func  # local import to keep top-level clean
 
-        max_stmt = (
-            select(func.max(Issue.key))
-            .where(Issue.project_id == project.id)
-        )
+        max_stmt = select(func.max(Issue.key)).where(Issue.project_id == project.id)
         max_key = (await db.execute(max_stmt)).scalar_one_or_none()
         if max_key and "-" in max_key:
             max_number = int(max_key.rsplit("-", 1)[1])
         else:
             max_number = 0
 
-        seq_stmt = select(IssueSequence).where(
-            IssueSequence.project_id == project.id
-        )
+        seq_stmt = select(IssueSequence).where(IssueSequence.project_id == project.id)
         seq = (await db.execute(seq_stmt)).scalar_one_or_none()
         if seq:
             seq.next_number = max_number + 1
         else:
-            db.add(
-                IssueSequence(project_id=project.id, next_number=max_number + 1)
-            )
+            db.add(IssueSequence(project_id=project.id, next_number=max_number + 1))
 
     await db.flush()
     await db.commit()
@@ -614,7 +568,7 @@ async def import_file(db: AsyncSession, path: str) -> ImportResult:
     """
     file_path = Path(path)
     logger.info("Importing from file: %s", file_path)
-    with open(file_path, "r", encoding="utf-8") as fh:
+    with open(file_path, encoding="utf-8") as fh:
         data = json.load(fh)
 
     if isinstance(data, list):
@@ -641,16 +595,14 @@ async def import_directory(db: AsyncSession, dir_path: str) -> ImportResult:
 
     for json_file in sorted(directory.glob("*.json")):
         try:
-            with open(json_file, "r", encoding="utf-8") as fh:
+            with open(json_file, encoding="utf-8") as fh:
                 data = json.load(fh)
             if isinstance(data, list):
                 all_issues.extend(data)
             elif isinstance(data, dict):
                 all_issues.append(data)
             else:
-                errors.append(
-                    f"{json_file}: unexpected JSON root type {type(data).__name__}"
-                )
+                errors.append(f"{json_file}: unexpected JSON root type {type(data).__name__}")
         except Exception as exc:
             errors.append(f"{json_file}: {exc}")
 
@@ -707,16 +659,14 @@ async def import_archive(db: AsyncSession, archive_path: str) -> ImportResult:
         # Load and collect all issues
         for json_file in json_files:
             try:
-                with open(json_file, "r", encoding="utf-8") as fh:
+                with open(json_file, encoding="utf-8") as fh:
                     data = json.load(fh)
                 if isinstance(data, list):
                     all_issues.extend(data)
                 elif isinstance(data, dict):
                     all_issues.append(data)
                 else:
-                    errors.append(
-                        f"{json_file.name}: unexpected JSON root type {type(data).__name__}"
-                    )
+                    errors.append(f"{json_file.name}: unexpected JSON root type {type(data).__name__}")
             except Exception as exc:
                 errors.append(f"{json_file.name}: {exc}")
 

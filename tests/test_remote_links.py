@@ -6,10 +6,11 @@ AUTH = {"Authorization": "Basic YWRtaW46YWRtaW4="}
 
 
 async def _create_issue(client, project="RHOAIENG", summary="Test"):
-    resp = await client.post("/rest/api/2/issue", json={
-        "fields": {"project": {"key": project}, "summary": summary,
-                   "issuetype": {"name": "Bug"}}
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/issue",
+        json={"fields": {"project": {"key": project}, "summary": summary, "issuetype": {"name": "Bug"}}},
+        headers=AUTH,
+    )
     return resp.json()
 
 
@@ -18,10 +19,12 @@ async def test_create_remote_link(client):
     issue = await _create_issue(client, summary="Remote link target")
     resp = await client.post(
         f"/rest/api/2/issue/{issue['key']}/remotelink",
-        json={"object": {
-            "url": "https://github.com/org/repo/pull/42",
-            "title": "org/repo#42: Fix the thing",
-        }},
+        json={
+            "object": {
+                "url": "https://github.com/org/repo/pull/42",
+                "title": "org/repo#42: Fix the thing",
+            }
+        },
         headers=AUTH,
     )
     assert resp.status_code == 201
@@ -44,8 +47,7 @@ async def test_list_remote_links(client):
         headers=AUTH,
     )
 
-    resp = await client.get(
-        f"/rest/api/2/issue/{issue['key']}/remotelink", headers=AUTH)
+    resp = await client.get(f"/rest/api/2/issue/{issue['key']}/remotelink", headers=AUTH)
     assert resp.status_code == 200
     links = resp.json()
     assert len(links) == 2
@@ -92,8 +94,7 @@ async def test_delete_remote_link(client):
     )
     assert del_resp.status_code == 204
 
-    list_resp = await client.get(
-        f"/rest/api/2/issue/{issue['key']}/remotelink", headers=AUTH)
+    list_resp = await client.get(f"/rest/api/2/issue/{issue['key']}/remotelink", headers=AUTH)
     assert len(list_resp.json()) == 0
 
 
@@ -118,8 +119,7 @@ async def test_remote_link_via_api_v3(client):
     )
     assert resp.status_code == 201
 
-    list_resp = await client.get(
-        f"/rest/api/3/issue/{issue['key']}/remotelink", headers=AUTH)
+    list_resp = await client.get(f"/rest/api/3/issue/{issue['key']}/remotelink", headers=AUTH)
     assert list_resp.status_code == 200
     links = list_resp.json()
     assert len(links) == 1
@@ -148,17 +148,25 @@ async def test_global_id_upsert(client):
     base = f"/rest/api/2/issue/{issue['key']}/remotelink"
     gid = "system=test&id=1"
 
-    resp1 = await client.post(base, json={
-        "globalId": gid,
-        "object": {"url": "https://example.com/v1", "title": "Version 1"},
-    }, headers=AUTH)
+    resp1 = await client.post(
+        base,
+        json={
+            "globalId": gid,
+            "object": {"url": "https://example.com/v1", "title": "Version 1"},
+        },
+        headers=AUTH,
+    )
     assert resp1.status_code == 201
     id1 = resp1.json()["id"]
 
-    resp2 = await client.post(base, json={
-        "globalId": gid,
-        "object": {"url": "https://example.com/v2", "title": "Version 2"},
-    }, headers=AUTH)
+    resp2 = await client.post(
+        base,
+        json={
+            "globalId": gid,
+            "object": {"url": "https://example.com/v2", "title": "Version 2"},
+        },
+        headers=AUTH,
+    )
     assert resp2.status_code == 201
     id2 = resp2.json()["id"]
     assert id1 == id2
@@ -175,15 +183,19 @@ async def test_relationship_and_summary_roundtrip(client):
     issue = await _create_issue(client, summary="Fields roundtrip")
     base = f"/rest/api/2/issue/{issue['key']}/remotelink"
 
-    resp = await client.post(base, json={
-        "globalId": "system=roundtrip&id=1",
-        "relationship": "causes",
-        "object": {
-            "url": "https://example.com/rt",
-            "title": "RT Link",
-            "summary": "A summary",
+    resp = await client.post(
+        base,
+        json={
+            "globalId": "system=roundtrip&id=1",
+            "relationship": "causes",
+            "object": {
+                "url": "https://example.com/rt",
+                "title": "RT Link",
+                "summary": "A summary",
+            },
         },
-    }, headers=AUTH)
+        headers=AUTH,
+    )
     assert resp.status_code == 201
     link_id = resp.json()["id"]
 
@@ -199,14 +211,22 @@ async def test_put_update_by_id(client):
     issue = await _create_issue(client, summary="PUT test")
     base = f"/rest/api/2/issue/{issue['key']}/remotelink"
 
-    create_resp = await client.post(base, json={
-        "object": {"url": "https://example.com/old", "title": "Old"},
-    }, headers=AUTH)
+    create_resp = await client.post(
+        base,
+        json={
+            "object": {"url": "https://example.com/old", "title": "Old"},
+        },
+        headers=AUTH,
+    )
     link_id = create_resp.json()["id"]
 
-    put_resp = await client.put(f"{base}/{link_id}", json={
-        "object": {"url": "https://example.com/new", "title": "New"},
-    }, headers=AUTH)
+    put_resp = await client.put(
+        f"{base}/{link_id}",
+        json={
+            "object": {"url": "https://example.com/new", "title": "New"},
+        },
+        headers=AUTH,
+    )
     assert put_resp.status_code == 200
     assert put_resp.json()["id"] == link_id
     assert "self" in put_resp.json()
@@ -223,13 +243,21 @@ async def test_get_by_global_id(client):
     base = f"/rest/api/2/issue/{issue['key']}/remotelink"
     gid = "system=filter&id=42"
 
-    await client.post(base, json={
-        "object": {"url": "https://example.com/no-gid", "title": "No GID"},
-    }, headers=AUTH)
-    await client.post(base, json={
-        "globalId": gid,
-        "object": {"url": "https://example.com/with-gid", "title": "With GID"},
-    }, headers=AUTH)
+    await client.post(
+        base,
+        json={
+            "object": {"url": "https://example.com/no-gid", "title": "No GID"},
+        },
+        headers=AUTH,
+    )
+    await client.post(
+        base,
+        json={
+            "globalId": gid,
+            "object": {"url": "https://example.com/with-gid", "title": "With GID"},
+        },
+        headers=AUTH,
+    )
 
     resp = await client.get(f"{base}?globalId={quote(gid, safe='')}", headers=AUTH)
     assert resp.status_code == 200
@@ -245,13 +273,21 @@ async def test_delete_by_global_id(client):
     base = f"/rest/api/2/issue/{issue['key']}/remotelink"
     gid = "system=del&id=99"
 
-    await client.post(base, json={
-        "globalId": gid,
-        "object": {"url": "https://example.com/del-gid", "title": "Del GID"},
-    }, headers=AUTH)
-    await client.post(base, json={
-        "object": {"url": "https://example.com/keep", "title": "Keep"},
-    }, headers=AUTH)
+    await client.post(
+        base,
+        json={
+            "globalId": gid,
+            "object": {"url": "https://example.com/del-gid", "title": "Del GID"},
+        },
+        headers=AUTH,
+    )
+    await client.post(
+        base,
+        json={
+            "object": {"url": "https://example.com/keep", "title": "Keep"},
+        },
+        headers=AUTH,
+    )
 
     del_resp = await client.delete(f"{base}?globalId={quote(gid, safe='')}", headers=AUTH)
     assert del_resp.status_code == 204
@@ -267,9 +303,13 @@ async def test_get_by_id_response_format(client):
     issue = await _create_issue(client, summary="Response format")
     base = f"/rest/api/2/issue/{issue['key']}/remotelink"
 
-    create_resp = await client.post(base, json={
-        "object": {"url": "https://example.com/fmt", "title": "Format"},
-    }, headers=AUTH)
+    create_resp = await client.post(
+        base,
+        json={
+            "object": {"url": "https://example.com/fmt", "title": "Format"},
+        },
+        headers=AUTH,
+    )
     link_id = create_resp.json()["id"]
 
     data = (await client.get(f"{base}/{link_id}", headers=AUTH)).json()

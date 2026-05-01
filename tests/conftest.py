@@ -8,8 +8,8 @@ to the ASGI app -- no real network socket is opened.
 import os
 from collections.abc import AsyncIterator
 
-import pytest
 import httpx
+import pytest
 
 # ---------------------------------------------------------------------------
 # Environment variables MUST be set before any application code is imported
@@ -35,22 +35,27 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
     """
     # Clear the cached settings so env-var changes are picked up
     from jira_emulator.config import get_settings
+
     get_settings.cache_clear()
 
     # Reset the global engine / session factory so the new in-memory DB
     # is used for this test.
     from jira_emulator.database import reset_engine
+
     reset_engine()
 
     # Build a brand-new FastAPI application
     from jira_emulator.app import create_app, lifespan
+
     app = create_app()
 
     # Enter the lifespan so tables + seed data are ready, then yield the
     # async HTTP client.
-    async with lifespan(app):
-        async with httpx.AsyncClient(
+    async with (
+        lifespan(app),
+        httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
             base_url="http://testserver",
-        ) as ac:
-            yield ac
+        ) as ac,
+    ):
+        yield ac

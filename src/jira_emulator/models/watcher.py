@@ -9,12 +9,8 @@ from jira_emulator.database import Base
 class Watcher(Base):
     __tablename__ = "watchers"
 
-    issue_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True
-    )
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id"), primary_key=True
-    )
+    issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), primary_key=True)
 
     user: Mapped["User"] = relationship()
 

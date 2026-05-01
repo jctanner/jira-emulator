@@ -3,44 +3,40 @@
 import json
 import logging
 import math
+import os
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Form, Request, UploadFile, File
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jira_emulator import __version__
-from jira_emulator.database import get_db
+from jira_emulator.adf import adf_to_markdown, is_adf
 from jira_emulator.config import get_settings
+from jira_emulator.database import get_db
 from jira_emulator.models.attachment import Attachment
 from jira_emulator.models.comment import Comment
 from jira_emulator.models.issue import Issue
-from jira_emulator.models.project import Project
-from jira_emulator.models.user import User
-from jira_emulator.models.status import Status
 from jira_emulator.models.issue_type import IssueType
 from jira_emulator.models.priority import Priority
-from jira_emulator.adf import is_adf, adf_to_markdown
-from jira_emulator.services import issue_service, search_service, history_service
-from jira_emulator.services.user_service import get_or_create_user
+from jira_emulator.models.project import Project
+from jira_emulator.models.status import Status
+from jira_emulator.models.user import User
+from jira_emulator.services import history_service, issue_service, search_service
 from jira_emulator.services.snapshot_service import (
+    create_snapshot,
+    delete_snapshot,
     is_snapshot_enabled,
     list_snapshots,
-    create_snapshot,
     restore_snapshot,
-    delete_snapshot,
 )
+from jira_emulator.services.user_service import get_or_create_user
 
 logger = logging.getLogger(__name__)
 
-# Template directory is relative to this file
-import os
-
-templates = Jinja2Templates(
-    directory=os.path.join(os.path.dirname(__file__), "templates")
-)
+templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 
 router = APIRouter()
 
@@ -65,9 +61,7 @@ async def home(request: Request, db: AsyncSession = Depends(get_db)):
         .order_by(Project.key)
     )
     rows = (await db.execute(stmt)).all()
-    projects = [
-        {"key": r.key, "name": r.name, "issue_count": r.issue_count} for r in rows
-    ]
+    projects = [{"key": r.key, "name": r.name, "issue_count": r.issue_count} for r in rows]
 
     return templates.TemplateResponse(
         request=request,
@@ -194,12 +188,8 @@ async def issue_list(
     total_pages = max(1, math.ceil(total / page_size))
 
     # Dropdown data (only needed when not using raw JQL)
-    all_projects = (
-        (await db.execute(select(Project).order_by(Project.key))).scalars().all()
-    )
-    all_statuses = (
-        (await db.execute(select(Status).order_by(Status.name))).scalars().all()
-    )
+    all_projects = (await db.execute(select(Project).order_by(Project.key))).scalars().all()
+    all_statuses = (await db.execute(select(Status).order_by(Status.name))).scalars().all()
 
     filters = {
         "jql": jql or "",
@@ -254,18 +244,10 @@ async def issue_detail(request: Request, key: str, db: AsyncSession = Depends(ge
             c["body"] = adf_to_markdown(body)
 
     # Load metadata for the edit modal
-    all_projects = (
-        (await db.execute(select(Project).order_by(Project.key))).scalars().all()
-    )
-    all_types = (
-        (await db.execute(select(IssueType).order_by(IssueType.name))).scalars().all()
-    )
-    all_priorities = (
-        (await db.execute(select(Priority).order_by(Priority.id))).scalars().all()
-    )
-    all_statuses = (
-        (await db.execute(select(Status).order_by(Status.name))).scalars().all()
-    )
+    all_projects = (await db.execute(select(Project).order_by(Project.key))).scalars().all()
+    all_types = (await db.execute(select(IssueType).order_by(IssueType.name))).scalars().all()
+    all_priorities = (await db.execute(select(Priority).order_by(Priority.id))).scalars().all()
+    all_statuses = (await db.execute(select(Status).order_by(Status.name))).scalars().all()
     all_users = (
         (await db.execute(select(User).where(User.active.is_(True)).order_by(User.display_name))).scalars().all()
     )
@@ -378,18 +360,19 @@ async def admin_import_upload(
     db: AsyncSession = Depends(get_db),
 ):
     """Accept a JSON or archive file upload and import issues."""
-    from jira_emulator.services.import_service import import_issues, import_archive
     import tempfile
+
+    from jira_emulator.services.import_service import import_archive, import_issues
 
     try:
         filename = file.filename or ""
 
         # Check if this is an archive file
         is_archive = (
-            filename.endswith(".tar.gz") or
-            filename.endswith(".tgz") or
-            filename.endswith(".tar") or
-            filename.endswith(".zip")
+            filename.endswith(".tar.gz")
+            or filename.endswith(".tgz")
+            or filename.endswith(".tar")
+            or filename.endswith(".zip")
         )
 
         if is_archive:
@@ -420,9 +403,7 @@ async def admin_import_upload(
                 data = [data]
 
             if not isinstance(data, list):
-                raise ValueError(
-                    f"Expected a JSON array or object, got {type(data).__name__}"
-                )
+                raise ValueError(f"Expected a JSON array or object, got {type(data).__name__}")
 
             result = await import_issues(db, data)
 
@@ -488,24 +469,18 @@ async def admin_import_upload(
 @router.get("/api/web/create-metadata")
 async def create_metadata(db: AsyncSession = Depends(get_db)):
     """Return projects, issue types, priorities, and users for the create form."""
-    projects = (
-        (await db.execute(select(Project).order_by(Project.key))).scalars().all()
+    projects = (await db.execute(select(Project).order_by(Project.key))).scalars().all()
+    issue_types = (await db.execute(select(IssueType).order_by(IssueType.name))).scalars().all()
+    priorities = (await db.execute(select(Priority).order_by(Priority.id))).scalars().all()
+    users = (await db.execute(select(User).where(User.active.is_(True)).order_by(User.display_name))).scalars().all()
+    return JSONResponse(
+        {
+            "projects": [{"key": p.key, "name": p.name} for p in projects],
+            "issueTypes": [{"name": t.name} for t in issue_types],
+            "priorities": [{"name": p.name} for p in priorities],
+            "users": [{"name": u.username, "displayName": u.display_name} for u in users],
+        }
     )
-    issue_types = (
-        (await db.execute(select(IssueType).order_by(IssueType.name))).scalars().all()
-    )
-    priorities = (
-        (await db.execute(select(Priority).order_by(Priority.id))).scalars().all()
-    )
-    users = (
-        (await db.execute(select(User).where(User.active.is_(True)).order_by(User.display_name))).scalars().all()
-    )
-    return JSONResponse({
-        "projects": [{"key": p.key, "name": p.name} for p in projects],
-        "issueTypes": [{"name": t.name} for t in issue_types],
-        "priorities": [{"name": p.name} for p in priorities],
-        "users": [{"name": u.username, "displayName": u.display_name} for u in users],
-    })
 
 
 # ---------------------------------------------------------------------------
@@ -537,7 +512,7 @@ async def create_issue_web(
     if assignee:
         fields["assignee"] = {"name": assignee}
     if labels:
-        fields["labels"] = [l.strip() for l in labels.split(",") if l.strip()]
+        fields["labels"] = [lbl.strip() for lbl in labels.split(",") if lbl.strip()]
 
     # Use the admin user as the reporter/current_user
     admin = await get_or_create_user(db, "admin", "admin")
@@ -573,7 +548,7 @@ async def edit_issue_web(
     fields: dict = {
         "summary": summary,
         "description": description,
-        "labels": [l.strip() for l in labels.split(",") if l.strip()] if labels else [],
+        "labels": [lbl.strip() for lbl in labels.split(",") if lbl.strip()] if labels else [],
     }
     if priority:
         fields["priority"] = {"name": priority}
@@ -602,9 +577,14 @@ async def edit_issue_web(
                     issue.status_id = new_status.id
                     issue.status = new_status
                     await history_service.record_change(
-                        db, issue.id, admin.id, "status",
-                        old_status_name, old_status_id,
-                        new_status.name, str(new_status.id),
+                        db,
+                        issue.id,
+                        admin.id,
+                        "status",
+                        old_status_name,
+                        old_status_id,
+                        new_status.name,
+                        str(new_status.id),
                     )
 
         await db.commit()
@@ -648,8 +628,14 @@ async def add_comment_web(
     await db.flush()
 
     await history_service.record_change(
-        db, issue.id, admin.id, "Comment",
-        None, None, body, str(comment.id),
+        db,
+        issue.id,
+        admin.id,
+        "Comment",
+        None,
+        None,
+        body,
+        str(comment.id),
     )
 
     await db.commit()
@@ -709,8 +695,14 @@ async def upload_attachment_web(
             f.write(content)
 
         await history_service.record_change(
-            db, issue.id, admin.id, "Attachment",
-            None, None, filename, str(attachment.id),
+            db,
+            issue.id,
+            admin.id,
+            "Attachment",
+            None,
+            None,
+            filename,
+            str(attachment.id),
         )
 
     await db.commit()
@@ -747,8 +739,14 @@ async def delete_attachment_web(
     admin = await get_or_create_user(db, "admin", "admin")
 
     await history_service.record_change(
-        db, issue.id, admin.id, "Attachment",
-        att.filename, str(att.id), None, None,
+        db,
+        issue.id,
+        admin.id,
+        "Attachment",
+        att.filename,
+        str(att.id),
+        None,
+        None,
     )
 
     settings = get_settings()
@@ -774,9 +772,7 @@ async def view_attachment_web(
     """Serve a text-based attachment inline for viewing in the browser."""
     from fastapi.responses import FileResponse
 
-    result = await db.execute(
-        select(Attachment).where(Attachment.id == attachment_id)
-    )
+    result = await db.execute(select(Attachment).where(Attachment.id == attachment_id))
     att = result.scalar_one_or_none()
     if att is None:
         return HTMLResponse("<h1>Attachment not found</h1>", status_code=404)
@@ -786,8 +782,8 @@ async def view_attachment_web(
     if not os.path.exists(disk_path):
         return HTMLResponse("<h1>Attachment file missing from disk</h1>", status_code=404)
 
-    if att.filename.endswith('.md'):
-        with open(disk_path, "r", errors="replace") as f:
+    if att.filename.endswith(".md"):
+        with open(disk_path, errors="replace") as f:
             content = f.read()
         return templates.TemplateResponse(
             request=request,

@@ -6,7 +6,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jira_emulator.models import (
-    Component,
     CustomField,
     IssueLinkType,
     IssueSequence,
@@ -265,12 +264,14 @@ async def load_seed_data(db: AsyncSession, admin_password: str = "admin") -> Non
     # Default API token
     from jira_emulator.models.api_token import ApiToken
 
-    db.add(ApiToken(
-        user_id=admin.id,
-        name="Default Token",
-        token_hash=hash_token(DEFAULT_API_TOKEN),
-        token_prefix=DEFAULT_API_TOKEN[:8],
-    ))
+    db.add(
+        ApiToken(
+            user_id=admin.id,
+            name="Default Token",
+            token_hash=hash_token(DEFAULT_API_TOKEN),
+            token_prefix=DEFAULT_API_TOKEN[:8],
+        )
+    )
 
     await db.commit()
     logger.info("Seed data loaded successfully")

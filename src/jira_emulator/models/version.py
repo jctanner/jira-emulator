@@ -13,9 +13,7 @@ class Version(Base):
     __table_args__ = (UniqueConstraint("project_id", "name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("projects.id"), nullable=False
-    )
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     released: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -29,12 +27,8 @@ class Version(Base):
 class IssueFixVersion(Base):
     __tablename__ = "issue_fix_versions"
 
-    issue_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True
-    )
-    version_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("versions.id"), primary_key=True
-    )
+    issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True)
+    version_id: Mapped[int] = mapped_column(Integer, ForeignKey("versions.id"), primary_key=True)
 
     version: Mapped["Version"] = relationship()
 
@@ -42,11 +36,7 @@ class IssueFixVersion(Base):
 class IssueAffectsVersion(Base):
     __tablename__ = "issue_affects_versions"
 
-    issue_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True
-    )
-    version_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("versions.id"), primary_key=True
-    )
+    issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True)
+    version_id: Mapped[int] = mapped_column(Integer, ForeignKey("versions.id"), primary_key=True)
 
     version: Mapped["Version"] = relationship()

@@ -1,7 +1,6 @@
 """Tests for project listing and detail endpoints."""
 
 import httpx
-import pytest
 
 from tests.conftest import AUTH_HEADER
 

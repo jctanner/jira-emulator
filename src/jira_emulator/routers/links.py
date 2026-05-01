@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from jira_emulator.auth.middleware import get_current_user
 from jira_emulator.config import get_settings
 from jira_emulator.database import get_db
-from jira_emulator.models.link import IssueLinkType, IssueLink
+from jira_emulator.models.link import IssueLink, IssueLinkType
 from jira_emulator.models.user import User
 from jira_emulator.services import issue_service
 
@@ -42,9 +42,7 @@ async def create_issue_link(
     if not type_name:
         raise HTTPException(status_code=400, detail=_jira_error(["type.name is required"]))
 
-    result = await db.execute(
-        select(IssueLinkType).where(IssueLinkType.name == type_name)
-    )
+    result = await db.execute(select(IssueLinkType).where(IssueLinkType.name == type_name))
     link_type = result.scalar_one_or_none()
     if link_type is None:
         raise HTTPException(
@@ -97,9 +95,7 @@ async def delete_issue_link(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete an issue link by ID."""
-    result = await db.execute(
-        select(IssueLink).where(IssueLink.id == link_id)
-    )
+    result = await db.execute(select(IssueLink).where(IssueLink.id == link_id))
     link = result.scalar_one_or_none()
     if link is None:
         raise HTTPException(

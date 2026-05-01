@@ -5,8 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from jira_emulator.models.project import Project, ProjectIssueType
-from jira_emulator.models.component import Component
-from jira_emulator.models.version import Version
 
 
 async def list_projects(db: AsyncSession) -> list[Project]:

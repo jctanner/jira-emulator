@@ -7,7 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jira_emulator.auth.middleware import get_current_user
-from jira_emulator.config import get_settings
 from jira_emulator.database import get_db
 from jira_emulator.models.api_token import ApiToken
 from jira_emulator.models.user import User

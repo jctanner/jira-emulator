@@ -2,10 +2,8 @@
 
 import os
 import sqlite3
-import tempfile
 
 import pytest
-import httpx
 
 AUTH = {"Authorization": "Basic YWRtaW46YWRtaW4="}
 
@@ -13,6 +11,7 @@ AUTH = {"Authorization": "Basic YWRtaW46YWRtaW4="}
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def tmp_dirs(tmp_path, monkeypatch):
@@ -44,6 +43,7 @@ def tmp_db(tmp_path, monkeypatch):
 
     # Patch get_settings to return a DATABASE_URL pointing to this file
     from jira_emulator.config import get_settings
+
     get_settings.cache_clear()
 
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
@@ -58,8 +58,10 @@ def tmp_db(tmp_path, monkeypatch):
 # is_snapshot_enabled
 # ---------------------------------------------------------------------------
 
+
 def test_is_snapshot_enabled_false(tmp_dirs):
     from jira_emulator.services.snapshot_service import is_snapshot_enabled
+
     assert is_snapshot_enabled() is False
 
 
@@ -77,13 +79,16 @@ def test_is_snapshot_enabled_true(tmp_dirs):
 # get_db_path
 # ---------------------------------------------------------------------------
 
+
 def test_get_db_path_file(monkeypatch):
     from jira_emulator.config import get_settings
+
     get_settings.cache_clear()
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:////data/jira.db")
     get_settings.cache_clear()
 
     from jira_emulator.services.snapshot_service import get_db_path
+
     path = get_db_path()
     assert path == "/data/jira.db"
 
@@ -92,11 +97,13 @@ def test_get_db_path_file(monkeypatch):
 
 def test_get_db_path_memory(monkeypatch):
     from jira_emulator.config import get_settings
+
     get_settings.cache_clear()
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite://")
     get_settings.cache_clear()
 
     from jira_emulator.services.snapshot_service import get_db_path
+
     path = get_db_path()
     assert path is None
 
@@ -106,6 +113,7 @@ def test_get_db_path_memory(monkeypatch):
 # ---------------------------------------------------------------------------
 # create_snapshot / list_snapshots
 # ---------------------------------------------------------------------------
+
 
 def test_create_and_list(tmp_dirs, tmp_db):
     from jira_emulator.services.snapshot_service import create_snapshot, list_snapshots
@@ -135,9 +143,12 @@ def test_create_with_label(tmp_dirs, tmp_db):
 # delete_snapshot
 # ---------------------------------------------------------------------------
 
+
 def test_delete(tmp_dirs, tmp_db):
     from jira_emulator.services.snapshot_service import (
-        create_snapshot, delete_snapshot, list_snapshots,
+        create_snapshot,
+        delete_snapshot,
+        list_snapshots,
     )
 
     info = create_snapshot()
@@ -158,6 +169,7 @@ def test_delete_nonexistent(tmp_dirs):
 # restore_snapshot
 # ---------------------------------------------------------------------------
 
+
 def test_restore_nonexistent(tmp_dirs, tmp_db):
     from jira_emulator.services.snapshot_service import restore_snapshot
 
@@ -169,8 +181,9 @@ def test_restore_nonexistent(tmp_dirs, tmp_db):
 # Name validation
 # ---------------------------------------------------------------------------
 
+
 def test_name_validation_slash(tmp_dirs):
-    from jira_emulator.services.snapshot_service import restore_snapshot, delete_snapshot
+    from jira_emulator.services.snapshot_service import delete_snapshot, restore_snapshot
 
     with pytest.raises(ValueError, match="Invalid"):
         restore_snapshot("../etc/passwd")
@@ -180,7 +193,7 @@ def test_name_validation_slash(tmp_dirs):
 
 
 def test_name_validation_dotdot(tmp_dirs):
-    from jira_emulator.services.snapshot_service import restore_snapshot, delete_snapshot
+    from jira_emulator.services.snapshot_service import delete_snapshot, restore_snapshot
 
     with pytest.raises(ValueError, match="Invalid"):
         restore_snapshot("..sneaky.db")
@@ -193,10 +206,12 @@ def test_name_validation_dotdot(tmp_dirs):
 # API endpoint — 501 when disabled
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_api_501_when_disabled(client, monkeypatch):
     """GET /api/admin/snapshots returns 501 when not in container."""
     import jira_emulator.services.snapshot_service as ss
+
     monkeypatch.setattr(ss, "CONTAINER_MARKER", "/nonexistent/marker")
 
     resp = await client.get("/api/admin/snapshots", headers=AUTH)

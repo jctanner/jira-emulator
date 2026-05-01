@@ -1,13 +1,16 @@
 import pytest
-import httpx
 
 AUTH = {"Authorization": "Basic YWRtaW46YWRtaW4="}
 
+
 async def _create_issue(client, project="RHOAIENG", summary="Test", issuetype="Bug"):
-    resp = await client.post("/rest/api/2/issue", json={
-        "fields": {"project": {"key": project}, "summary": summary, "issuetype": {"name": issuetype}}
-    }, headers=AUTH)
+    resp = await client.post(
+        "/rest/api/2/issue",
+        json={"fields": {"project": {"key": project}, "summary": summary, "issuetype": {"name": issuetype}}},
+        headers=AUTH,
+    )
     return resp.json()
+
 
 @pytest.mark.asyncio
 async def test_get_watchers_empty(client):
@@ -16,6 +19,7 @@ async def test_get_watchers_empty(client):
     resp = await client.get(f"/rest/api/2/issue/{issue['key']}/watchers", headers=AUTH)
     assert resp.status_code == 200
     assert resp.json()["watchCount"] == 0
+
 
 @pytest.mark.asyncio
 async def test_add_watcher(client):
@@ -30,6 +34,7 @@ async def test_add_watcher(client):
 
     get_resp = await client.get(f"/rest/api/2/issue/{issue['key']}/watchers", headers=AUTH)
     assert get_resp.json()["watchCount"] == 1
+
 
 @pytest.mark.asyncio
 async def test_remove_watcher(client):
@@ -49,6 +54,7 @@ async def test_remove_watcher(client):
 
     get_resp = await client.get(f"/rest/api/2/issue/{issue['key']}/watchers", headers=AUTH)
     assert get_resp.json()["watchCount"] == 0
+
 
 @pytest.mark.asyncio
 async def test_add_watcher_idempotent(client):

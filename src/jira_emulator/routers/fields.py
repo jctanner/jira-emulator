@@ -1,11 +1,10 @@
 """Field listing endpoint: /rest/api/2/field."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jira_emulator.auth.middleware import get_current_user
-from jira_emulator.config import get_settings
 from jira_emulator.database import get_db
 from jira_emulator.models.custom_field import CustomField
 from jira_emulator.models.user import User
@@ -258,15 +257,17 @@ async def list_fields(
         if cf.field_type == "multiselect":
             schema["items"] = "option"
 
-        all_fields.append({
-            "id": cf.field_id,
-            "name": cf.name,
-            "custom": True,
-            "orderable": True,
-            "navigable": True,
-            "searchable": True,
-            "clauseNames": [cf.name, f"cf[{cf.id}]"],
-            "schema": schema,
-        })
+        all_fields.append(
+            {
+                "id": cf.field_id,
+                "name": cf.name,
+                "custom": True,
+                "orderable": True,
+                "navigable": True,
+                "searchable": True,
+                "clauseNames": [cf.name, f"cf[{cf.id}]"],
+                "schema": schema,
+            }
+        )
 
     return all_fields

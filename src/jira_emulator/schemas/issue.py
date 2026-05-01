@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # ---- requests ----
+
 
 class CreateIssueRequest(BaseModel):
     """POST /rest/api/2/issue body."""
@@ -29,6 +29,7 @@ class TransitionRequest(BaseModel):
 
 
 # ---- responses ----
+
 
 class CreateIssueResponse(BaseModel):
     """Returned after a successful issue creation."""

@@ -1,6 +1,6 @@
 """Project endpoints: /rest/api/2/project."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jira_emulator.auth.middleware import get_current_user
@@ -30,13 +30,15 @@ async def list_projects(
 
     result = []
     for p in projects:
-        result.append({
-            "self": f"{base_url}/rest/api/2/project/{p.id}",
-            "id": str(p.id),
-            "key": p.key,
-            "name": p.name,
-            "projectTypeKey": p.project_type_key,
-        })
+        result.append(
+            {
+                "self": f"{base_url}/rest/api/2/project/{p.id}",
+                "id": str(p.id),
+                "key": p.key,
+                "name": p.name,
+                "projectTypeKey": p.project_type_key,
+            }
+        )
 
     return result
 
@@ -63,36 +65,42 @@ async def get_project(
     issue_types = []
     for assoc in project.issue_type_associations:
         it = assoc.issue_type
-        issue_types.append({
-            "self": f"{base_url}/rest/api/2/issuetype/{it.id}",
-            "id": str(it.id),
-            "description": it.description or "",
-            "iconUrl": it.icon_url or "",
-            "name": it.name,
-            "subtask": it.subtask,
-        })
+        issue_types.append(
+            {
+                "self": f"{base_url}/rest/api/2/issuetype/{it.id}",
+                "id": str(it.id),
+                "description": it.description or "",
+                "iconUrl": it.icon_url or "",
+                "name": it.name,
+                "subtask": it.subtask,
+            }
+        )
 
     # Build components list
     components = []
     for comp in project.components:
-        components.append({
-            "self": f"{base_url}/rest/api/2/component/{comp.id}",
-            "id": str(comp.id),
-            "name": comp.name,
-            "description": comp.description or "",
-        })
+        components.append(
+            {
+                "self": f"{base_url}/rest/api/2/component/{comp.id}",
+                "id": str(comp.id),
+                "name": comp.name,
+                "description": comp.description or "",
+            }
+        )
 
     # Build versions list
     versions = []
     for ver in project.versions:
-        versions.append({
-            "self": f"{base_url}/rest/api/2/version/{ver.id}",
-            "id": str(ver.id),
-            "name": ver.name,
-            "description": ver.description or "",
-            "released": ver.released,
-            "releaseDate": str(ver.release_date) if ver.release_date else None,
-        })
+        versions.append(
+            {
+                "self": f"{base_url}/rest/api/2/version/{ver.id}",
+                "id": str(ver.id),
+                "name": ver.name,
+                "description": ver.description or "",
+                "released": ver.released,
+                "releaseDate": str(ver.release_date) if ver.release_date else None,
+            }
+        )
 
     return {
         "self": f"{base_url}/rest/api/2/project/{project.id}",
@@ -103,7 +111,9 @@ async def get_project(
         "lead": {
             "name": project.lead or "",
             "displayName": project.lead or "",
-        } if project.lead else None,
+        }
+        if project.lead
+        else None,
         "projectTypeKey": project.project_type_key,
         "issueTypes": issue_types,
         "components": components,

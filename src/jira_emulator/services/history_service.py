@@ -36,9 +36,7 @@ async def record_change(
     return entry
 
 
-async def get_issue_history(
-    db: AsyncSession, issue_id: int
-) -> list[IssueHistory]:
+async def get_issue_history(db: AsyncSession, issue_id: int) -> list[IssueHistory]:
     """Return all history entries for an issue, ordered by created_at ASC."""
     result = await db.execute(
         select(IssueHistory)

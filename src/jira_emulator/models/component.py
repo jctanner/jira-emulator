@@ -11,9 +11,7 @@ class Component(Base):
     __table_args__ = (UniqueConstraint("project_id", "name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("projects.id"), nullable=False
-    )
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     lead: Mapped[str | None] = mapped_column(String)
@@ -24,11 +22,7 @@ class Component(Base):
 class IssueComponent(Base):
     __tablename__ = "issue_components"
 
-    issue_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True
-    )
-    component_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("components.id"), primary_key=True
-    )
+    issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True)
+    component_id: Mapped[int] = mapped_column(Integer, ForeignKey("components.id"), primary_key=True)
 
     component: Mapped["Component"] = relationship()

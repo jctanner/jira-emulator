@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import base64
 
-from sqlalchemy import select, func as sa_func
+from sqlalchemy import func as sa_func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from jira_emulator.models.issue import Issue
-from jira_emulator.models.user import User
 from jira_emulator.jql.parser import parse_jql
 from jira_emulator.jql.transformer import JQLTransformer
+from jira_emulator.models.issue import Issue
+from jira_emulator.models.user import User
 from jira_emulator.services import issue_service
 
 

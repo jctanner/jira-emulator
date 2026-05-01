@@ -4,8 +4,8 @@ import json
 import os
 import tempfile
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, Response
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,14 +13,14 @@ from jira_emulator.auth.middleware import get_current_user
 from jira_emulator.database import Base, get_db, get_engine, get_session_factory
 from jira_emulator.models.user import User
 from jira_emulator.schemas.admin import ImportRequest, ImportResponse
-from jira_emulator.services.import_service import import_issues, import_archive
+from jira_emulator.services.import_service import import_archive, import_issues
 from jira_emulator.services.seed_service import load_seed_data
 from jira_emulator.services.snapshot_service import (
+    create_snapshot,
+    delete_snapshot,
     is_snapshot_enabled,
     list_snapshots,
-    create_snapshot,
     restore_snapshot,
-    delete_snapshot,
 )
 
 router = APIRouter(prefix="/api/admin")
@@ -68,9 +68,7 @@ async def import_file_upload(
         else:
             suffix = os.path.splitext(filename)[1]
 
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=suffix
-        ) as temp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
             content = await file.read()
             temp_file.write(content)
             temp_path = temp_file.name

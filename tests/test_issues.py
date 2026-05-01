@@ -1,14 +1,13 @@
 """Tests for issue CRUD, transitions, and comments."""
 
 import httpx
-import pytest
 
 from tests.conftest import AUTH_HEADER
-
 
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
 
 async def _create_issue(
     client: httpx.AsyncClient,

@@ -12,8 +12,7 @@ from jira_emulator.schemas.auth import (
     CreateUserRequest,
     UpdateUserRequest,
 )
-from jira_emulator.services import auth_service
-from jira_emulator.services import user_service
+from jira_emulator.services import auth_service, user_service
 
 router = APIRouter()
 
@@ -52,9 +51,7 @@ async def create_user(
     if existing:
         raise HTTPException(
             status_code=400,
-            detail=_jira_error(
-                [f"A user with username '{body.name}' already exists."]
-            ),
+            detail=_jira_error([f"A user with username '{body.name}' already exists."]),
         )
 
     user = await user_service.create_user(
@@ -162,8 +159,6 @@ async def search_assignable_users(
     settings = get_settings()
     base_url = settings.BASE_URL
 
-    users = await user_service.search_assignable_users(
-        db, project=project, username=username
-    )
+    users = await user_service.search_assignable_users(db, project=project, username=username)
 
     return [_format_user(u, base_url) for u in users]
