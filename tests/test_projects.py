@@ -5,17 +5,17 @@ import httpx
 from tests.conftest import AUTH_HEADER
 
 
-async def test_list_projects_returns_four(client: httpx.AsyncClient):
-    """GET /rest/api/2/project should return exactly 4 seeded projects."""
+async def test_list_projects_returns_seeded(client: httpx.AsyncClient):
+    """GET /rest/api/2/project should return all seeded projects."""
     resp = await client.get("/rest/api/2/project", headers=AUTH_HEADER)
     assert resp.status_code == 200
 
     data = resp.json()
     assert isinstance(data, list)
-    assert len(data) == 4
+    assert len(data) == 5
 
     keys = {p["key"] for p in data}
-    assert keys == {"RHAIRFE", "RHAISTRAT", "RHOAIENG", "AIPCC"}
+    assert keys == {"RHAIRFE", "RHAISTRAT", "RHOAIENG", "AIPCC", "TEST"}
 
     # Each entry should have the expected structure
     for p in data:

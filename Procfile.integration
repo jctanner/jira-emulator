@@ -1,0 +1,2 @@
+api: uv run python -m jira_emulator serve --port $INTEGRATION_API_PORT
+mcp: JIRA_SERVER=http://localhost:$INTEGRATION_API_PORT JIRA_USER=admin JIRA_TOKEN=admin MCP_PORT=$INTEGRATION_MCP_PORT uv run python mcp_servers/atlassian_jira.py

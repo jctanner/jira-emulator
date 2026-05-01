@@ -31,6 +31,7 @@ PROJECTS = [
     {"key": "RHAISTRAT", "name": "Red Hat AI Strategy", "description": "Features and Initiatives"},
     {"key": "RHOAIENG", "name": "Red Hat OpenShift AI Engineering", "description": "Engineering work items"},
     {"key": "AIPCC", "name": "AIPCC", "description": "AIPCC-specific work items"},
+    {"key": "TEST", "name": "Test Project", "description": "General-purpose test project"},
 ]
 
 ISSUE_TYPES = [
@@ -50,6 +51,7 @@ PROJECT_ISSUE_TYPES = {
     "RHAISTRAT": ["Feature", "Initiative", "Sub-task"],
     "RHOAIENG": ["Bug", "Task", "Story", "Epic", "Sub-task"],
     "AIPCC": ["Bug", "Task", "Story", "Epic", "Sub-task"],
+    "TEST": ["Bug", "Task", "Story", "Epic", "Sub-task"],
 }
 
 PRIORITIES = [
@@ -150,6 +152,7 @@ PROJECT_WORKFLOWS = {
     "RHAISTRAT": "RHAISTRAT Workflow",
     "RHOAIENG": "Default Workflow",
     "AIPCC": "Default Workflow",
+    "TEST": "Default Workflow",
 }
 
 
