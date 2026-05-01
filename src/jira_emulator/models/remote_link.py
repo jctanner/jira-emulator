@@ -14,9 +14,12 @@ class RemoteLink(Base):
         Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False
     )
     url: Mapped[str] = mapped_column(Text, nullable=False)
-    title: Mapped[str | None] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text)
     icon_url: Mapped[str | None] = mapped_column(Text)
     icon_title: Mapped[str | None] = mapped_column(Text)
+    global_id: Mapped[str | None] = mapped_column(Text)
+    relationship_type: Mapped[str | None] = mapped_column(Text)
 
     issue: Mapped["Issue"] = relationship(back_populates="remote_links")
 
