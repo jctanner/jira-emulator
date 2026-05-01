@@ -452,3 +452,67 @@ All remote link operations require:
 ### v2 vs v3 Differences
 
 The remote link endpoints behave identically in v2 and v3. Unlike issue description/comment fields, remote link fields do not use ADF, so there is no behavioral difference between API versions.
+
+---
+
+## Part 4: Atlassian Rovo MCP Server — Link Tools
+
+The official Atlassian Rovo MCP Server (cloud-hosted, OAuth 2.1) exposes link-related
+functionality through the following tools. Documentation:
+https://support.atlassian.com/atlassian-rovo-mcp-server/docs/supported-tools/
+
+### Read tools (`read_jira` permission group, scope `read:jira-work`)
+
+| Tool | Description |
+|------|-------------|
+| `getJiraIssueRemoteIssueLinks` | List remote issue links (e.g., Confluence links) on a Jira issue |
+| `getIssueLinkTypes` | List available issue link types (Blocks, Duplicates, etc.) |
+
+`getJiraIssueRemoteIssueLinks` takes an `issueIdOrKey` parameter and returns the
+remote link array for that issue.
+
+`getIssueLinkTypes` takes no parameters and returns the list of configured link
+types with their `id`, `name`, `inward`, and `outward` labels.
+
+### Write tools (`write_jira` permission group, scope `write:jira-work`)
+
+There is **no dedicated MCP tool** for creating, updating, or deleting issue links
+or remote links. As of the current beta, passing `update.issuelinks` through
+`editJiraIssue` is accepted but silently ignored — creating/editing links via MCP
+is a known limitation on Atlassian's backlog.
+
+The write tools that exist (`createJiraIssue`, `editJiraIssue`, `addCommentToJiraIssue`,
+`transitionJiraIssue`, `addWorklogToJiraIssue`) do not support link operations.
+
+### Complete Rovo MCP tool list (for reference)
+
+All Jira tools exposed by the official Atlassian Rovo MCP Server:
+
+**`read_jira`** (scope: `read:jira-work`)
+
+| Tool | Description |
+|------|-------------|
+| `getJiraIssue` | Get a Jira issue by ID or key |
+| `getJiraIssueRemoteIssueLinks` | List remote issue links on an issue |
+| `getIssueLinkTypes` | List available issue link types |
+| `getJiraIssueTypeMetaWithFields` | Get create-field metadata for a project and issue type |
+| `getJiraProjectIssueTypesMetadata` | List issue types available in a Jira project |
+| `getTransitionsForJiraIssue` | List available workflow transitions for an issue |
+| `getVisibleJiraProjects` | List Jira projects the user can access |
+| `lookupJiraAccountId` | Find Jira user account IDs by name or email |
+
+**`write_jira`** (scope: `write:jira-work`)
+
+| Tool | Description |
+|------|-------------|
+| `createJiraIssue` | Create a new Jira issue |
+| `editJiraIssue` | Update fields on an existing Jira issue |
+| `addCommentToJiraIssue` | Add a comment to a Jira issue |
+| `transitionJiraIssue` | Perform a workflow transition on an issue |
+| `addWorklogToJiraIssue` | Add a time-tracking worklog to a Jira issue |
+
+**`search_jira`** (scope: `search:jira-work`)
+
+| Tool | Description |
+|------|-------------|
+| `searchJiraIssuesUsingJql` | Search Jira issues using a JQL query |
