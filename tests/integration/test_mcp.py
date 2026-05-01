@@ -11,10 +11,9 @@ from mcp.client.sse import sse_client
 
 @asynccontextmanager
 async def _mcp_session(url: str):
-    async with sse_client(url) as (read_stream, write_stream):
-        async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
-            yield session
+    async with sse_client(url) as (read_stream, write_stream), ClientSession(read_stream, write_stream) as session:
+        await session.initialize()
+        yield session
 
 
 @pytest.mark.asyncio
