@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: uv sync --dev
+      - run: uv sync --extra dev
       - run: make lint
 
   test:
@@ -30,7 +30,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: uv sync --dev
+      - run: uv sync --extra dev
       - run: make test
 
   integration:
@@ -44,5 +44,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: uv sync --dev
+      - run: uv sync --extra dev
       - run: make integration
