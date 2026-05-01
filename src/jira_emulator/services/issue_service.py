@@ -28,6 +28,32 @@ from jira_emulator.services import user_service
 from jira_emulator.services import history_service
 
 
+def _infer_custom_field_type(value):
+    """Infer the custom field storage type from a Python value."""
+    if isinstance(value, (dict, list)):
+        return "multiselect"
+    if isinstance(value, (int, float)):
+        return "number"
+    return "string"
+
+
+async def _get_or_create_custom_field(db: AsyncSession, field_id: str, value):
+    """Look up a CustomField by field_id; auto-create if missing."""
+    result = await db.execute(
+        select(CustomField).where(CustomField.field_id == field_id)
+    )
+    cf = result.scalar_one_or_none()
+    if cf is None:
+        cf = CustomField(
+            field_id=field_id,
+            name=field_id,
+            field_type=_infer_custom_field_type(value),
+        )
+        db.add(cf)
+        await db.flush()
+    return cf
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -371,16 +397,11 @@ async def create_issue(
             await db.flush()
         db.add(IssueAffectsVersion(issue_id=issue.id, version_id=version.id))
 
-    # -- custom fields --
+    # -- custom fields (auto-creates field definition if unknown) --
     for field_key, field_value in fields.items():
         if not field_key.startswith("customfield_"):
             continue
-        result = await db.execute(
-            select(CustomField).where(CustomField.field_id == field_key)
-        )
-        cf = result.scalar_one_or_none()
-        if cf is None:
-            continue
+        cf = await _get_or_create_custom_field(db, field_key, field_value)
 
         cfv = IssueCustomFieldValue(issue_id=issue.id, custom_field_id=cf.id)
 
@@ -392,7 +413,6 @@ async def create_issue(
         elif cf.field_type == "date":
             cfv.value_string = str(field_value) if field_value is not None else None
         elif cf.field_type in ("select", "multiselect"):
-            # select/multiselect values come as dicts or lists of dicts
             import json
             if isinstance(field_value, (dict, list)):
                 cfv.value_json = json.dumps(field_value)
@@ -645,16 +665,11 @@ async def _apply_field_updates(
                 await db.flush()
             db.add(IssueAffectsVersion(issue_id=issue.id, version_id=version.id))
 
-    # custom fields
+    # custom fields (auto-creates field definition if unknown)
     for field_key, field_value in fields.items():
         if not field_key.startswith("customfield_"):
             continue
-        result = await db.execute(
-            select(CustomField).where(CustomField.field_id == field_key)
-        )
-        cf = result.scalar_one_or_none()
-        if cf is None:
-            continue
+        cf = await _get_or_create_custom_field(db, field_key, field_value)
 
         # Find existing value or create new
         result = await db.execute(

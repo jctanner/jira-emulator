@@ -437,6 +437,40 @@ async def import_issue(
                 cfv.value_string = str(raw_value)
 
             db.add(cfv)
+
+        # Also process raw customfield_* keys directly from the payload
+        for raw_key, raw_value in issue_data.items():
+            if not raw_key.startswith("customfield_") or raw_value is None:
+                continue
+            # Skip if already handled by CUSTOM_FIELD_MAP
+            mapped_ids = {v[0] for v in CUSTOM_FIELD_MAP.values()}
+            if raw_key in mapped_ids:
+                continue
+
+            if isinstance(raw_value, (dict, list)):
+                inferred_type = "multiselect"
+            elif isinstance(raw_value, (int, float)):
+                inferred_type = "number"
+            else:
+                inferred_type = "string"
+
+            cf = await _get_or_create_custom_field(
+                db, raw_key, raw_key, inferred_type
+            )
+            cfv = IssueCustomFieldValue(
+                issue_id=issue.id, custom_field_id=cf.id
+            )
+            if inferred_type == "number":
+                try:
+                    cfv.value_number = float(raw_value)
+                except (TypeError, ValueError):
+                    cfv.value_string = str(raw_value)
+            elif inferred_type == "multiselect":
+                cfv.value_json = json.dumps(raw_value)
+            else:
+                cfv.value_string = str(raw_value)
+            db.add(cfv)
+
         await db.flush()
 
         # ------------------------------------------------------------------

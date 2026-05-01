@@ -87,6 +87,9 @@ class Issue(Base):
     attachments: Mapped[list["Attachment"]] = relationship(
         back_populates="issue", cascade="all, delete-orphan"
     )
+    remote_links: Mapped[list["RemoteLink"]] = relationship(
+        back_populates="issue", cascade="all, delete-orphan"
+    )
 
 
 class IssueSequence(Base):
@@ -117,3 +120,4 @@ from jira_emulator.models.sprint import IssueSprint  # noqa: E402, F401
 from jira_emulator.models.link import IssueLink  # noqa: E402, F401
 from jira_emulator.models.issue_history import IssueHistory  # noqa: E402, F401
 from jira_emulator.models.attachment import Attachment  # noqa: E402, F401
+from jira_emulator.models.remote_link import RemoteLink  # noqa: E402, F401
