@@ -139,6 +139,7 @@ def create_app() -> FastAPI:
         links,
         metadata,
         projects,
+        remote_links,
         search,
         tokens,
         users,
@@ -154,6 +155,7 @@ def create_app() -> FastAPI:
     app.include_router(users.router)
     app.include_router(tokens.router)
     app.include_router(links.router)
+    app.include_router(remote_links.router)
     app.include_router(admin.router)
 
     # Web UI router
