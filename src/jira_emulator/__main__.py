@@ -22,12 +22,18 @@ def main():
     import_parser = subparsers.add_parser("import", help="Import issues from JSON")
     import_parser.add_argument("path", help="Path to JSON file or directory")
 
+    # import-config command
+    config_parser = subparsers.add_parser("import-config", help="Import v1.0 project configuration")
+    config_parser.add_argument("path", help="Path to v1.0 project config JSON file")
+
     args = parser.parse_args()
 
     if args.command == "serve":
         _run_server(args)
     elif args.command == "import":
         _run_import(args)
+    elif args.command == "import-config":
+        _run_import_config(args)
     else:
         parser.print_help()
         sys.exit(1)
@@ -84,6 +90,51 @@ def _run_import(args):
     if result.errors:
         print(f"  Errors: {len(result.errors)}")
         for err in result.errors[:10]:
+            print(f"    - {err}")
+
+
+def _run_import_config(args):
+    """Import a v1.0 project configuration file."""
+    import asyncio
+    import json
+
+    from jira_emulator.database import get_session_factory, init_db
+    from jira_emulator.services.config_import_service import import_project_config
+
+    path = args.path
+    if not os.path.isfile(path):
+        print(f"Error: {path} is not a file", file=sys.stderr)
+        sys.exit(1)
+
+    with open(path) as f:
+        config = json.load(f)
+
+    version = config.get("version")
+    if version != "1.0":
+        print(f"Error: unsupported config version: {version!r} (expected '1.0')", file=sys.stderr)
+        sys.exit(1)
+
+    async def _do_import():
+        import jira_emulator.models  # noqa: F401
+
+        await init_db()
+        factory = get_session_factory()
+        async with factory() as db:
+            return await import_project_config(db, config)
+
+    result = asyncio.run(_do_import())
+    print("Config import complete:")
+    print(f"  Statuses:      {result.statuses}")
+    print(f"  Issue types:   {result.issue_types}")
+    print(f"  Priorities:    {result.priorities}")
+    print(f"  Resolutions:   {result.resolutions}")
+    print(f"  Link types:    {result.link_types}")
+    print(f"  Custom fields: {result.custom_fields}")
+    print(f"  Workflows:     {result.workflows}")
+    print(f"  Projects:      {result.projects}")
+    if result.errors:
+        print(f"  Errors: {len(result.errors)}")
+        for err in result.errors[:20]:
             print(f"    - {err}")
 
 

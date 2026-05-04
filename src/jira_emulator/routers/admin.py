@@ -13,6 +13,7 @@ from jira_emulator.auth.middleware import get_current_user
 from jira_emulator.database import Base, get_db, get_engine, get_session_factory
 from jira_emulator.models.user import User
 from jira_emulator.schemas.admin import ImportRequest, ImportResponse
+from jira_emulator.services.config_import_service import import_project_config
 from jira_emulator.services.import_service import import_archive, import_issues
 from jira_emulator.services.seed_service import load_seed_data
 from jira_emulator.services.snapshot_service import (
@@ -105,6 +106,44 @@ async def import_file_upload(
         projects_created=result.projects_created,
         users_created=result.users_created,
     )
+
+
+@router.post("/import/project-config")
+async def import_project_config_upload(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import a v1.0 project configuration JSON file."""
+    content = await file.read()
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Expected a JSON object")
+
+    version = data.get("version")
+    if version != "1.0":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported config version: {version!r} (expected '1.0')",
+        )
+
+    result = await import_project_config(db, data)
+
+    return {
+        "statuses": result.statuses,
+        "issue_types": result.issue_types,
+        "priorities": result.priorities,
+        "resolutions": result.resolutions,
+        "link_types": result.link_types,
+        "custom_fields": result.custom_fields,
+        "workflows": result.workflows,
+        "projects": result.projects,
+        "errors": result.errors,
+    }
 
 
 @router.post("/reset")
