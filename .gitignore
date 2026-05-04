@@ -35,6 +35,7 @@ htmlcov/
 # Data/scratch
 tickets/
 tmp/
+exports/
 
 # Claude
 .claude/
