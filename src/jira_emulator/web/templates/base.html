@@ -699,14 +699,142 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
-    // Render all elements with data-markdown attribute
-    document.addEventListener('DOMContentLoaded', function() {
-        if (typeof marked !== 'undefined') {
-            marked.setOptions({ breaks: true, gfm: true });
-            document.querySelectorAll('[data-markdown]').forEach(function(el) {
-                el.innerHTML = marked.parse(el.textContent);
-            });
+    function isJiraWikiMarkup(text) {
+        return /^h[1-6]\.\s/m.test(text) ||
+               /^\*\s/m.test(text) && !/^\*\*/.test(text) ||
+               /^\#\s/m.test(text) ||
+               /\{code[}:]/m.test(text) ||
+               /\{noformat\}/m.test(text) ||
+               /\{quote\}/m.test(text) ||
+               /\[.+?\|https?:\/\//m.test(text) ||
+               /\|\|.+\|\|/m.test(text);
+    }
+
+    function jiraWikiToHtml(text) {
+        var lines = text.split('\n');
+        var html = [];
+        var inCode = false, inNoformat = false, inQuote = false, inPanel = false;
+        var codeBlock = [];
+
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+
+            if (inCode) {
+                if (/^\{code\}/.test(line)) {
+                    html.push('<pre><code>' + codeBlock.join('\n').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</code></pre>');
+                    codeBlock = [];
+                    inCode = false;
+                } else {
+                    codeBlock.push(line);
+                }
+                continue;
+            }
+            if (/^\{code[}:]/.test(line)) { inCode = true; continue; }
+
+            if (inNoformat) {
+                if (/^\{noformat\}/.test(line)) {
+                    html.push('<pre>' + codeBlock.join('\n').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre>');
+                    codeBlock = [];
+                    inNoformat = false;
+                } else {
+                    codeBlock.push(line);
+                }
+                continue;
+            }
+            if (/^\{noformat\}/.test(line)) { inNoformat = true; continue; }
+
+            if (/^\{quote\}/.test(line)) {
+                if (inQuote) { html.push('</blockquote>'); inQuote = false; }
+                else { html.push('<blockquote>'); inQuote = true; }
+                continue;
+            }
+            if (/^\{panel/.test(line)) {
+                if (inPanel) { html.push('</div>'); inPanel = false; }
+                else { html.push('<div class="panel" style="border:1px solid #ddd;padding:8px;margin:8px 0;border-radius:4px;">'); inPanel = true; }
+                continue;
+            }
+
+            // Headings
+            var hm = line.match(/^h([1-6])\.\s+(.*)/);
+            if (hm) { html.push('<h' + hm[1] + '>' + inlineFormat(hm[2]) + '</h' + hm[1] + '>'); continue; }
+
+            // Horizontal rule
+            if (/^----\s*$/.test(line)) { html.push('<hr>'); continue; }
+
+            // Blockquote
+            if (/^bq\.\s+/.test(line)) {
+                html.push('<blockquote>' + inlineFormat(line.replace(/^bq\.\s+/, '')) + '</blockquote>');
+                continue;
+            }
+
+            // Unordered list
+            var ulm = line.match(/^(\*+)\s+(.*)/);
+            if (ulm) { html.push('<li style="margin-left:' + ((ulm[1].length - 1) * 20) + 'px">' + inlineFormat(ulm[2]) + '</li>'); continue; }
+
+            // Ordered list
+            var olm = line.match(/^(#+)\s+(.*)/);
+            if (olm) { html.push('<li style="margin-left:' + ((olm[1].length - 1) * 20) + 'px;list-style-type:decimal">' + inlineFormat(olm[2]) + '</li>'); continue; }
+
+            // Table header row
+            if (/^\|\|/.test(line)) {
+                var cells = line.split('||').filter(function(c) { return c.trim() !== ''; });
+                html.push('<table><tr>' + cells.map(function(c) { return '<th>' + inlineFormat(c.trim()) + '</th>'; }).join('') + '</tr>');
+                continue;
+            }
+            // Table data row
+            if (/^\|/.test(line)) {
+                var cells = line.split('|').filter(function(c) { return c.trim() !== ''; });
+                html.push('<tr>' + cells.map(function(c) { return '<td>' + inlineFormat(c.trim()) + '</td>'; }).join('') + '</tr>');
+                continue;
+            }
+
+            // Empty line = paragraph break
+            if (line.trim() === '') { html.push('<br>'); continue; }
+
+            // Regular text
+            html.push('<p>' + inlineFormat(line) + '</p>');
         }
+
+        if (inQuote) html.push('</blockquote>');
+        if (inPanel) html.push('</div>');
+        return html.join('\n');
+    }
+
+    function inlineFormat(text) {
+        // {color}
+        text = text.replace(/\{color:([^}]+)\}(.*?)\{color\}/g, '<span style="color:$1">$2</span>');
+        // Bold + italic
+        text = text.replace(/\*_([^_]+)_\*/g, '<strong><em>$1</em></strong>');
+        text = text.replace(/_\*([^*]+)\*_/g, '<em><strong>$1</strong></em>');
+        // Bold
+        text = text.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>');
+        // Italic
+        text = text.replace(/(?<![a-zA-Z0-9\/:])_([^_\n]+)_(?![a-zA-Z0-9])/g, '<em>$1</em>');
+        // Strikethrough
+        text = text.replace(/-([^-\n]+)-/g, '<del>$1</del>');
+        // Monospace
+        text = text.replace(/\{\{([^}]+)\}\}/g, '<code>$1</code>');
+        // Links [text|url]
+        text = text.replace(/\[([^|]+)\|([^\]]+)\]/g, '<a href="$2">$1</a>');
+        // Bare links [url]
+        text = text.replace(/\[([^\]]+)\]/g, function(m, url) {
+            if (/^https?:\/\//.test(url)) return '<a href="' + url + '">' + url + '</a>';
+            if (/^~/.test(url)) return '<em>@' + url.slice(1) + '</em>';
+            return m;
+        });
+        return text;
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('[data-markdown]').forEach(function(el) {
+            var text = el.textContent;
+            if (isJiraWikiMarkup(text)) {
+                el.innerHTML = jiraWikiToHtml(text);
+            } else if (typeof marked !== 'undefined') {
+                marked.setOptions({ breaks: true, gfm: true });
+                el.innerHTML = marked.parse(text);
+            }
+        });
     });
     </script>
     <style>

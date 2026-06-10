@@ -12,11 +12,13 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from jira_emulator.models.comment import Comment
 from jira_emulator.models.component import Component, IssueComponent
 from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue
 from jira_emulator.models.issue import Issue, IssueSequence
 from jira_emulator.models.issue_type import IssueType
 from jira_emulator.models.label import Label
+from jira_emulator.models.link import IssueLink, IssueLinkType
 from jira_emulator.models.priority import Priority
 from jira_emulator.models.project import Project
 from jira_emulator.models.resolution import Resolution
@@ -199,6 +201,122 @@ async def _get_or_create_custom_field(db: AsyncSession, field_id: str, name: str
     db.add(cf)
     await db.flush()
     return cf
+
+
+async def _get_or_create_link_type(
+    db: AsyncSession, name: str, inward: str | None = None, outward: str | None = None
+) -> IssueLinkType:
+    stmt = select(IssueLinkType).where(IssueLinkType.name == name)
+    row = (await db.execute(stmt)).scalar_one_or_none()
+    if row:
+        return row
+    lt = IssueLinkType(name=name, inward_description=inward, outward_description=outward)
+    db.add(lt)
+    await db.flush()
+    return lt
+
+
+# ---------------------------------------------------------------------------
+# Jira REST API format normalization
+# ---------------------------------------------------------------------------
+def _extract_name(obj: dict | str | None) -> str | None:
+    """Extract .name from a Jira REST API object, or return the string as-is."""
+    if obj is None:
+        return None
+    if isinstance(obj, str):
+        return obj
+    return obj.get("name")
+
+
+def _extract_display_name(obj: dict | str | None) -> str | None:
+    """Extract .displayName from a Jira REST API user object."""
+    if obj is None:
+        return None
+    if isinstance(obj, str):
+        return obj
+    return obj.get("displayName")
+
+
+def _normalize_jira_api_issue(raw: dict) -> dict:
+    """Convert a Jira REST API issue dict to the flat import format.
+
+    If the issue already uses the flat format (no ``fields`` dict), it is
+    returned unchanged.
+    """
+    fields = raw.get("fields")
+    if not isinstance(fields, dict):
+        return raw
+
+    flat: dict = {"key": raw.get("key", "")}
+
+    flat["summary"] = fields.get("summary", "")
+    flat["description"] = fields.get("description")
+
+    flat["issue_type"] = _extract_name(fields.get("issuetype")) or "Task"
+    flat["status"] = _extract_name(fields.get("status")) or "New"
+    flat["priority"] = _extract_name(fields.get("priority"))
+    flat["assignee"] = _extract_display_name(fields.get("assignee"))
+    flat["reporter"] = _extract_display_name(fields.get("reporter"))
+
+    resolution = fields.get("resolution")
+    if isinstance(resolution, dict):
+        flat["resolution"] = resolution.get("name")
+    elif isinstance(resolution, str):
+        flat["resolution"] = resolution
+
+    flat["project"] = fields.get("project")
+    flat["labels"] = fields.get("labels") or []
+    flat["components"] = fields.get("components") or []
+    flat["fix_versions"] = fields.get("fixVersions") or []
+    flat["affects_versions"] = fields.get("versions") or []
+
+    flat["created"] = fields.get("created")
+    flat["updated"] = fields.get("updated")
+    flat["due_date"] = fields.get("duedate")
+
+    parent = fields.get("parent")
+    if isinstance(parent, dict) and parent.get("key"):
+        flat["epic_link"] = parent["key"]
+
+    # Stash comments and links for post-processing
+    comment_obj = fields.get("comment")
+    if isinstance(comment_obj, dict):
+        comments = comment_obj.get("comments")
+        if comments:
+            flat["_comments"] = comments
+    elif isinstance(comment_obj, list):
+        if comment_obj:
+            flat["_comments"] = comment_obj
+
+    issuelinks = fields.get("issuelinks")
+    if issuelinks:
+        flat["_issuelinks"] = issuelinks
+
+    # Pass through custom fields
+    for key, value in fields.items():
+        if key.startswith("customfield_") and value is not None:
+            flat[key] = value
+
+    return flat
+
+
+def _unwrap_export_envelope(data: dict | list) -> list[dict]:
+    """Unwrap a Jira export envelope if present.
+
+    Handles:
+    - ``{"metadata": {...}, "issues": [...]}`` (export script output)
+    - ``{"issues": [...]}`` (bare issues wrapper)
+    - ``[...]`` (plain list of issues)
+    - ``{...}`` (single issue dict without "issues" key)
+    """
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        issues = data.get("issues")
+        if isinstance(issues, list):
+            return issues
+        return [data]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -454,7 +572,31 @@ async def import_issue(
         await db.flush()
 
         # ------------------------------------------------------------------
-        # 16. Epic link — defer to second pass
+        # 16. Comments (from Jira REST API format)
+        # ------------------------------------------------------------------
+        for comment_data in issue_data.get("_comments") or []:
+            body = comment_data.get("body", "")
+            if not body:
+                continue
+            author_obj = comment_data.get("author")
+            author = None
+            if author_obj:
+                display = _extract_display_name(author_obj)
+                if display:
+                    author = await _get_or_create_user_from_display(db, display, result)
+            comment_created = _parse_datetime(comment_data.get("created")) or datetime.utcnow()
+            comment_updated = _parse_datetime(comment_data.get("updated")) or comment_created
+            db.add(Comment(
+                issue_id=issue.id,
+                author_id=author.id if author else None,
+                body=body,
+                created_at=comment_created,
+                updated_at=comment_updated,
+            ))
+        await db.flush()
+
+        # ------------------------------------------------------------------
+        # 17. Epic link — defer to second pass
         # ------------------------------------------------------------------
         epic_link_key = issue_data.get("epic_link")
         if epic_link_key and epic_links is not None:
@@ -485,12 +627,82 @@ async def _resolve_epic_links(db: AsyncSession, epic_links: dict[str, str]) -> l
             parent_stmt = select(Issue).where(Issue.key == epic_key)
             parent = (await db.execute(parent_stmt)).scalar_one_or_none()
             if parent is None:
-                errors.append(f"{issue_key}: epic {epic_key} not found, cannot set parent")
+                logger.debug("Skipping parent link %s -> %s (parent not in database)", issue_key, epic_key)
                 continue
 
             child.parent_id = parent.id
         except Exception as exc:
             errors.append(f"{issue_key}: epic link error: {exc}")
+
+    await db.flush()
+    return errors
+
+
+async def _resolve_issue_links(db: AsyncSession, deferred_links: list[dict]) -> list[str]:
+    """Resolve deferred issue links after all issues have been imported.
+
+    Each entry has ``_source_key`` (the issue that had the link) plus either
+    ``inwardIssue`` or ``outwardIssue`` (Jira REST API link format).
+    """
+    errors: list[str] = []
+    for link_data in deferred_links:
+        try:
+            source_key = link_data.get("_source_key", "")
+            link_type_info = link_data.get("type", {})
+            link_type_name = link_type_info.get("name", "Related")
+
+            inward_issue_info = link_data.get("inwardIssue")
+            outward_issue_info = link_data.get("outwardIssue")
+
+            if inward_issue_info:
+                target_key = inward_issue_info.get("key", "")
+                inward_key = target_key
+                outward_key = source_key
+            elif outward_issue_info:
+                target_key = outward_issue_info.get("key", "")
+                inward_key = source_key
+                outward_key = target_key
+            else:
+                continue
+
+            if not target_key:
+                continue
+
+            inward_stmt = select(Issue).where(Issue.key == inward_key)
+            inward_issue = (await db.execute(inward_stmt)).scalar_one_or_none()
+            outward_stmt = select(Issue).where(Issue.key == outward_key)
+            outward_issue = (await db.execute(outward_stmt)).scalar_one_or_none()
+
+            if not inward_issue or not outward_issue:
+                continue
+
+            link_type = await _get_or_create_link_type(
+                db,
+                link_type_name,
+                inward=link_type_info.get("inward"),
+                outward=link_type_info.get("outward"),
+            )
+
+            # Avoid duplicates
+            existing = (
+                await db.execute(
+                    select(IssueLink).where(
+                        IssueLink.link_type_id == link_type.id,
+                        IssueLink.inward_issue_id == inward_issue.id,
+                        IssueLink.outward_issue_id == outward_issue.id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing:
+                continue
+
+            db.add(IssueLink(
+                link_type_id=link_type.id,
+                inward_issue_id=inward_issue.id,
+                outward_issue_id=outward_issue.id,
+            ))
+        except Exception as exc:
+            errors.append(f"issue link: {exc}")
 
     await db.flush()
     return errors
@@ -502,23 +714,41 @@ async def _resolve_epic_links(db: AsyncSession, epic_links: dict[str, str]) -> l
 async def import_issues(db: AsyncSession, issues: list[dict]) -> ImportResult:
     """Import a list of issue dicts (first pass + epic resolution + sequences).
 
-    This is the main entry point for programmatic imports.
+    This is the main entry point for programmatic imports.  Accepts both the
+    flat import format and raw Jira REST API format (with nested ``fields``).
     """
     result = ImportResult()
     epic_links: dict[str, str] = {}
+    deferred_links: list[dict] = []
+
+    # Normalize issues (handles Jira REST API format)
+    normalized = [_normalize_jira_api_issue(issue) for issue in issues]
 
     # First pass: import every issue
-    for issue_data in issues:
+    for issue_data in normalized:
+        key = issue_data.get("key", "")
+        if not key or "-" not in key:
+            result.errors.append(f"Skipping issue with missing or invalid key: {key!r}")
+            continue
         await import_issue(db, issue_data, result, epic_links=epic_links)
+        # Collect deferred issue links
+        for link in issue_data.get("_issuelinks") or []:
+            link["_source_key"] = key
+            deferred_links.append(link)
 
     # Second pass: resolve epic / parent links
     if epic_links:
         link_errors = await _resolve_epic_links(db, epic_links)
         result.errors.extend(link_errors)
 
+    # Third pass: resolve issue links
+    if deferred_links:
+        link_errors = await _resolve_issue_links(db, deferred_links)
+        result.errors.extend(link_errors)
+
     # Update issue sequences so that the next created issue gets a correct number
     project_keys: set[str] = set()
-    for issue_data in issues:
+    for issue_data in normalized:
         key = issue_data.get("key", "")
         if "-" in key:
             project_keys.add(key.rsplit("-", 1)[0])
@@ -564,21 +794,20 @@ async def import_issues(db: AsyncSession, issues: list[dict]) -> ImportResult:
 async def import_file(db: AsyncSession, path: str) -> ImportResult:
     """Read a JSON file and import the issues it contains.
 
-    The file may be a JSON array of issue dicts **or** a single issue dict.
+    The file may be a JSON array of issue dicts, a single issue dict, or a
+    Jira export envelope (``{"metadata": ..., "issues": [...]}``)
     """
     file_path = Path(path)
     logger.info("Importing from file: %s", file_path)
     with open(file_path, encoding="utf-8") as fh:
         data = json.load(fh)
 
-    if isinstance(data, list):
-        return await import_issues(db, data)
-    elif isinstance(data, dict):
-        return await import_issues(db, [data])
-    else:
+    issues = _unwrap_export_envelope(data)
+    if not issues and not isinstance(data, (list, dict)):
         result = ImportResult()
         result.errors.append(f"{path}: unexpected JSON root type {type(data).__name__}")
         return result
+    return await import_issues(db, issues)
 
 
 async def import_directory(db: AsyncSession, dir_path: str) -> ImportResult:
@@ -597,12 +826,7 @@ async def import_directory(db: AsyncSession, dir_path: str) -> ImportResult:
         try:
             with open(json_file, encoding="utf-8") as fh:
                 data = json.load(fh)
-            if isinstance(data, list):
-                all_issues.extend(data)
-            elif isinstance(data, dict):
-                all_issues.append(data)
-            else:
-                errors.append(f"{json_file}: unexpected JSON root type {type(data).__name__}")
+            all_issues.extend(_unwrap_export_envelope(data))
         except Exception as exc:
             errors.append(f"{json_file}: {exc}")
 
@@ -661,12 +885,7 @@ async def import_archive(db: AsyncSession, archive_path: str) -> ImportResult:
             try:
                 with open(json_file, encoding="utf-8") as fh:
                     data = json.load(fh)
-                if isinstance(data, list):
-                    all_issues.extend(data)
-                elif isinstance(data, dict):
-                    all_issues.append(data)
-                else:
-                    errors.append(f"{json_file.name}: unexpected JSON root type {type(data).__name__}")
+                all_issues.extend(_unwrap_export_envelope(data))
             except Exception as exc:
                 errors.append(f"{json_file.name}: {exc}")
 

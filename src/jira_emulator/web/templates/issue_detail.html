@@ -19,7 +19,12 @@
 
 <div class="issue-header" style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-200);">
     <div class="issue-summary">{{ issue.fields.summary | default('') }}</div>
-    <button class="btn btn-default" onclick="openEditModal()" style="flex-shrink: 0;">Edit</button>
+    <div style="display: flex; gap: 8px; flex-shrink: 0;">
+        <button class="btn btn-default" onclick="openEditModal()">Edit</button>
+        <form method="post" action="/issue/{{ issue.key }}/delete" onsubmit="return confirm('Permanently delete {{ issue.key }}? This cannot be undone.')" style="margin: 0;">
+            <button type="submit" class="btn" style="background: var(--ds-background-danger, #de350b); color: white;">Delete</button>
+        </form>
+    </div>
 </div>
 
 <div class="detail-layout">
@@ -157,11 +162,16 @@
                 <div class="history-list">
                     {% for h in histories %}
                     <div class="history-entry">
-                        <div class="comment-header">
-                            {% set author_name = h.author.displayName | default('Unknown') if h.author else 'System' %}
-                            <div class="comment-avatar">{{ author_name[0] | upper }}</div>
-                            <span class="comment-author">{{ author_name }}</span>
-                            <span class="comment-date">{{ h.created | default('') }}</span>
+                        <div class="comment-header" style="display: flex; align-items: center; justify-content: space-between;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                {% set author_name = h.author.displayName | default('Unknown') if h.author else 'System' %}
+                                <div class="comment-avatar">{{ author_name[0] | upper }}</div>
+                                <span class="comment-author">{{ author_name }}</span>
+                                <span class="comment-date">{{ h.created | default('') }}</span>
+                            </div>
+                            <form method="post" action="/issue/{{ issue.key }}/rollback/{{ h.id }}" onsubmit="return confirm('Rollback {{ issue.key }} to this point? All changes after this entry will be reversed.')" style="margin: 0;">
+                                <button type="submit" class="btn btn-default" style="font-size: 12px; padding: 2px 8px;">Rollback</button>
+                            </form>
                         </div>
                         <table class="history-table">
                             <thead>

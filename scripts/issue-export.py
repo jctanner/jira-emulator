@@ -2,7 +2,7 @@
 """Export issues from a Jira-compatible server with full pagination.
 
 Reads JIRA_USER and JIRA_API_TOKEN from .env, paginates through
-POST /rest/api/2/search, and writes raw API responses to a JSON file.
+POST /rest/api/2/search/jql, and writes raw API responses to a JSON file.
 
 Usage:
     uv run python scripts/issue-export.py --project RHOAIENG
@@ -77,25 +77,22 @@ class JiraIssueExporter:
         return self._get(f"/rest/api/2/issue/{key}")
 
     def _search_keys(self, jql: str, max_results: int) -> list[str]:
-        """Paginate through search to collect all issue keys."""
+        """Paginate through search to collect all issue keys using cursor pagination."""
         keys: list[str] = []
-        start_at = 0
-        total = None
+        next_page_token: str | None = None
 
         while True:
-            data = self._post(
-                "/rest/api/2/search",
-                json={
-                    "jql": jql,
-                    "startAt": start_at,
-                    "maxResults": max_results,
-                    "fields": ["key"],
-                },
-            )
+            body: dict = {
+                "jql": jql,
+                "maxResults": max_results,
+                "fields": ["key"],
+            }
+            if next_page_token is not None:
+                body["nextPageToken"] = next_page_token
 
-            if total is None:
-                total = data.get("total", 0)
-                print(f"  Total issues: {total}", file=sys.stderr)
+            data = self._post("/rest/api/2/search/jql", json=body)
+
+            total = data.get("total", "?")
 
             issues = data.get("issues", [])
             if not issues:
@@ -104,8 +101,11 @@ class JiraIssueExporter:
             keys.extend(i["key"] for i in issues)
             print(f"  Discovered {len(keys)}/{total} keys...", file=sys.stderr)
 
-            start_at += len(issues)
-            if start_at >= total:
+            if data.get("isLast", True):
+                break
+
+            next_page_token = data.get("nextPageToken")
+            if not next_page_token:
                 break
 
         return keys
@@ -118,6 +118,15 @@ class JiraIssueExporter:
         print(f"Exporting issues: {jql}", file=sys.stderr)
         print(f"  Server: {self.server}", file=sys.stderr)
         print(f"  Page size: {max_results}", file=sys.stderr)
+
+        resp = self.client.get("/rest/api/2/myself")
+        if resp.status_code == 200:
+            me = resp.json()
+            print(f"  Authenticated as: {me.get('displayName', '?')} ({me.get('emailAddress', '?')})", file=sys.stderr)
+        else:
+            print(f"  Auth check failed: HTTP {resp.status_code}", file=sys.stderr)
+            print(f"  {resp.text[:300]}", file=sys.stderr)
+            sys.exit(1)
 
         keys = self._search_keys(jql, max_results)
 

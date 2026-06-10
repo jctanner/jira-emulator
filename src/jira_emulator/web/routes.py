@@ -19,6 +19,7 @@ from jira_emulator.database import get_db
 from jira_emulator.models.attachment import Attachment
 from jira_emulator.models.comment import Comment
 from jira_emulator.models.issue import Issue
+from jira_emulator.models.issue_history import IssueHistory
 from jira_emulator.models.issue_type import IssueType
 from jira_emulator.models.priority import Priority
 from jira_emulator.models.project import Project
@@ -362,7 +363,11 @@ async def admin_import_upload(
     """Accept a JSON or archive file upload and import issues."""
     import tempfile
 
-    from jira_emulator.services.import_service import import_archive, import_issues
+    from jira_emulator.services.import_service import (
+        _unwrap_export_envelope,
+        import_archive,
+        import_issues,
+    )
 
     try:
         filename = file.filename or ""
@@ -399,13 +404,11 @@ async def admin_import_upload(
             content = await file.read()
             data = json.loads(content)
 
-            if isinstance(data, dict):
-                data = [data]
-
-            if not isinstance(data, list):
+            issues = _unwrap_export_envelope(data)
+            if not issues and not isinstance(data, (list, dict)):
                 raise ValueError(f"Expected a JSON array or object, got {type(data).__name__}")
 
-            result = await import_issues(db, data)
+            result = await import_issues(db, issues)
 
         snap_enabled = is_snapshot_enabled()
         return templates.TemplateResponse(
@@ -595,6 +598,133 @@ async def edit_issue_web(
             f"<h1>Error updating issue</h1><p>{exc}</p><p><a href='/issue/{key}'>Back to issue</a></p>",
             status_code=400,
         )
+
+
+# ---------------------------------------------------------------------------
+# POST /issue/{key}/delete — Delete issue from web UI
+# ---------------------------------------------------------------------------
+@router.post("/issue/{key}/delete")
+async def delete_issue_web(
+    key: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete an issue and redirect to its project page."""
+    from jira_emulator.services import issue_service
+
+    issue = await issue_service.get_issue(db, key)
+    project_key = issue.project.key if issue and issue.project else None
+
+    deleted = await issue_service.delete_issue(db, key)
+    if not deleted:
+        return HTMLResponse(
+            f"<h1>Issue not found</h1><p>{key} does not exist.</p><p><a href='/'>Home</a></p>",
+            status_code=404,
+        )
+    await db.commit()
+
+    redirect_url = f"/project/{project_key}" if project_key else "/"
+    return RedirectResponse(url=redirect_url, status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# POST /issue/{key}/rollback/{history_id} — Rollback to a history point
+# ---------------------------------------------------------------------------
+@router.post("/issue/{key}/rollback/{history_id}")
+async def rollback_issue_web(
+    key: str,
+    history_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Rollback an issue to a previous history point by reversing newer changes."""
+    from jira_emulator.services.user_service import get_or_create_user, slugify_username
+
+    issue = await issue_service.get_issue(db, key)
+    if not issue:
+        return HTMLResponse(
+            f"<h1>Issue not found</h1><p>{key} does not exist.</p><p><a href='/'>Home</a></p>",
+            status_code=404,
+        )
+
+    # Find the target history entry
+    target_stmt = select(IssueHistory).where(IssueHistory.id == history_id)
+    target_entry = (await db.execute(target_stmt)).scalar_one_or_none()
+    if not target_entry:
+        return HTMLResponse(
+            f"<h1>History entry not found</h1><p><a href='/issue/{key}'>Back to issue</a></p>",
+            status_code=404,
+        )
+
+    # Get all history entries for this issue that are newer than the target
+    newer_stmt = (
+        select(IssueHistory)
+        .where(
+            IssueHistory.issue_id == issue.id,
+            IssueHistory.id > history_id,
+        )
+        .order_by(IssueHistory.id.desc())
+    )
+    newer_entries = (await db.execute(newer_stmt)).scalars().all()
+
+    if not newer_entries:
+        return RedirectResponse(url=f"/issue/{key}", status_code=303)
+
+    rolled_back_fields = set()
+
+    # Walk entries in reverse chronological order and undo each change
+    for entry in newer_entries:
+        field = entry.field
+        if field in rolled_back_fields:
+            continue
+        rolled_back_fields.add(field)
+
+        if field == "summary":
+            issue.summary = entry.from_value or ""
+        elif field == "description":
+            issue.description = entry.from_value
+        elif field == "status":
+            if entry.from_value:
+                result = await db.execute(select(Status).where(Status.name == entry.from_value))
+                status = result.scalar_one_or_none()
+                if status:
+                    issue.status_id = status.id
+        elif field == "priority":
+            if entry.from_value:
+                result = await db.execute(select(Priority).where(Priority.name == entry.from_value))
+                priority = result.scalar_one_or_none()
+                if priority:
+                    issue.priority_id = priority.id
+            else:
+                issue.priority_id = None
+        elif field == "assignee":
+            if entry.from_value:
+                username = entry.from_id or slugify_username(entry.from_value)
+                user = await get_or_create_user(db, display_name=entry.from_value, username=username)
+                issue.assignee_id = user.id
+            else:
+                issue.assignee_id = None
+        elif field == "reporter":
+            if entry.from_value:
+                username = entry.from_id or slugify_username(entry.from_value)
+                user = await get_or_create_user(db, display_name=entry.from_value, username=username)
+                issue.reporter_id = user.id
+            else:
+                issue.reporter_id = None
+
+    # Record a rollback history entry
+    await history_service.record_change(
+        db, issue.id, None,
+        "Rollback",
+        f"Rolled back to history entry #{history_id}",
+        None,
+        f"{len(newer_entries)} change(s) reversed",
+        None,
+    )
+
+    issue.updated_at = datetime.utcnow()
+    await db.flush()
+    await db.commit()
+
+    return RedirectResponse(url=f"/issue/{key}", status_code=303)
 
 
 # ---------------------------------------------------------------------------

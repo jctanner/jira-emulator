@@ -88,16 +88,16 @@ async def import_file_upload(
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
 
-        if isinstance(data, dict):
-            data = [data]
+        from jira_emulator.services.import_service import _unwrap_export_envelope
 
-        if not isinstance(data, list):
+        issues = _unwrap_export_envelope(data)
+        if not issues and not isinstance(data, (list, dict)):
             raise HTTPException(
                 status_code=400,
                 detail=f"Expected a JSON array or object, got {type(data).__name__}",
             )
 
-        result = await import_issues(db, data)
+        result = await import_issues(db, issues)
 
     return ImportResponse(
         imported=result.imported,

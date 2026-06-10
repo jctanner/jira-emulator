@@ -666,3 +666,278 @@ async def test_api_import_json_file(client):
     finally:
         if os.path.exists(json_path):
             os.remove(json_path)
+
+
+# --- Jira REST API format import tests ---
+
+
+def _jira_api_issue(key, summary, **overrides):
+    """Build a minimal issue in Jira REST API v2 format (nested fields)."""
+    project_key = key.rsplit("-", 1)[0]
+    reporter_name = overrides.pop("reporter", "Test Reporter")
+    assignee_name = overrides.pop("assignee", None)
+
+    fields = {
+        "summary": summary,
+        "issuetype": {"id": "1", "name": overrides.pop("issuetype", "Bug")},
+        "status": {"id": "1", "name": overrides.pop("status", "New")},
+        "priority": {"id": "1", "name": overrides.pop("priority", "Major")},
+        "project": {"key": project_key, "name": overrides.pop("project_name", project_key)},
+        "reporter": {"accountId": "abc123", "displayName": reporter_name} if reporter_name else None,
+        "assignee": {"accountId": "def456", "displayName": assignee_name} if assignee_name else None,
+        "labels": overrides.pop("labels", []),
+        "components": overrides.pop("components", []),
+        "fixVersions": overrides.pop("fixVersions", []),
+        "versions": overrides.pop("versions", []),
+        "resolution": None,
+        "created": overrides.pop("created", "2026-01-15T10:00:00.000+0000"),
+        "updated": overrides.pop("updated", "2026-01-15T12:00:00.000+0000"),
+        "duedate": overrides.pop("duedate", None),
+        "comment": overrides.pop("comment", {"comments": [], "total": 0}),
+        "issuelinks": overrides.pop("issuelinks", []),
+    }
+    parent = overrides.pop("parent", None)
+    if parent:
+        fields["parent"] = parent
+    resolution_name = overrides.pop("resolution_name", None)
+    if resolution_name:
+        fields["resolution"] = {"name": resolution_name}
+    fields.update(overrides)
+    return {"key": key, "id": "99999", "fields": fields}
+
+
+@pytest.mark.asyncio
+async def test_api_import_jira_api_format(client):
+    """Import a single issue in Jira REST API format (nested fields)."""
+    issue = _jira_api_issue(
+        "JAPI-1", "Jira API format issue",
+        issuetype="Story",
+        status="In Progress",
+        priority="Critical",
+        reporter="Jane Doe",
+        assignee="John Smith",
+        labels=["imported", "test"],
+        components=[{"id": "1", "name": "Backend"}],
+        fixVersions=[{"id": "1", "name": "2.0.0"}],
+    )
+
+    resp = await client.post("/api/admin/import", json={"issues": [issue]}, headers=AUTH)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["imported"] == 1
+    assert "JAPI" in data["projects_created"]
+
+    issue_resp = await client.get("/rest/api/2/issue/JAPI-1", headers=AUTH)
+    assert issue_resp.status_code == 200
+    fields = issue_resp.json()["fields"]
+    assert fields["summary"] == "Jira API format issue"
+    assert fields["issuetype"]["name"] == "Story"
+    assert fields["status"]["name"] == "In Progress"
+    assert fields["priority"]["name"] == "Critical"
+    assert fields["assignee"]["displayName"] == "John Smith"
+    assert fields["reporter"]["displayName"] == "Jane Doe"
+    assert set(fields["labels"]) == {"imported", "test"}
+    assert any(c["name"] == "Backend" for c in fields["components"])
+    assert any(v["name"] == "2.0.0" for v in fields["fixVersions"])
+
+
+@pytest.mark.asyncio
+async def test_api_import_jira_export_wrapper(client):
+    """Import issues wrapped in the export envelope format."""
+    issues = [
+        _jira_api_issue("WRAP-1", "Wrapped issue 1"),
+        _jira_api_issue("WRAP-2", "Wrapped issue 2"),
+    ]
+    payload = {
+        "metadata": {
+            "exported_at": "2026-06-10T00:00:00+00:00",
+            "source": "https://example.atlassian.net",
+            "project": "WRAP",
+            "jql": "project = WRAP",
+            "total": 2,
+        },
+        "issues": issues,
+    }
+
+    resp = await client.post("/api/admin/import", json=payload, headers=AUTH)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["imported"] == 2
+
+    for key in ["WRAP-1", "WRAP-2"]:
+        issue_resp = await client.get(f"/rest/api/2/issue/{key}", headers=AUTH)
+        assert issue_resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_api_import_file_jira_export_wrapper(client):
+    """File upload with Jira export envelope format."""
+    issues = [
+        _jira_api_issue("FWRAP-1", "File wrapped issue"),
+    ]
+    payload = {
+        "metadata": {
+            "exported_at": "2026-06-10T00:00:00+00:00",
+            "source": "https://example.atlassian.net",
+            "project": "FWRAP",
+            "total": 1,
+        },
+        "issues": issues,
+    }
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(payload, f)
+        json_path = f.name
+
+    try:
+        with open(json_path, "rb") as f:
+            resp = await client.post(
+                "/api/admin/import/file",
+                headers=AUTH,
+                files={"file": ("export.json", f, "application/json")},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["imported"] == 1
+
+        issue_resp = await client.get("/rest/api/2/issue/FWRAP-1", headers=AUTH)
+        assert issue_resp.status_code == 200
+        assert issue_resp.json()["fields"]["summary"] == "File wrapped issue"
+    finally:
+        if os.path.exists(json_path):
+            os.remove(json_path)
+
+
+@pytest.mark.asyncio
+async def test_api_import_jira_api_with_comments(client):
+    """Comments from Jira REST API format are imported."""
+    issue = _jira_api_issue(
+        "CTEST-1", "Issue with comments",
+        comment={
+            "comments": [
+                {
+                    "id": "100",
+                    "author": {"accountId": "abc", "displayName": "Alice"},
+                    "body": "First comment",
+                    "created": "2026-01-15T10:30:00.000+0000",
+                    "updated": "2026-01-15T10:30:00.000+0000",
+                },
+                {
+                    "id": "101",
+                    "author": {"accountId": "def", "displayName": "Bob"},
+                    "body": "Second comment",
+                    "created": "2026-01-15T11:00:00.000+0000",
+                    "updated": "2026-01-15T11:00:00.000+0000",
+                },
+            ],
+            "total": 2,
+        },
+    )
+
+    resp = await client.post("/api/admin/import", json={"issues": [issue]}, headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["imported"] == 1
+
+    issue_resp = await client.get("/rest/api/2/issue/CTEST-1", headers=AUTH)
+    assert issue_resp.status_code == 200
+    comments = issue_resp.json()["fields"]["comment"]["comments"]
+    assert len(comments) == 2
+    assert comments[0]["body"] == "First comment"
+    assert comments[1]["body"] == "Second comment"
+
+
+@pytest.mark.asyncio
+async def test_api_import_jira_api_with_links(client):
+    """Issue links from Jira REST API format are imported."""
+    issue_a = _jira_api_issue("LNKTEST-1", "Link source")
+    issue_b = _jira_api_issue(
+        "LNKTEST-2", "Link target",
+        issuelinks=[
+            {
+                "id": "500",
+                "type": {
+                    "id": "10001",
+                    "name": "Blocks",
+                    "inward": "is blocked by",
+                    "outward": "blocks",
+                },
+                "outwardIssue": {
+                    "id": "1",
+                    "key": "LNKTEST-1",
+                    "fields": {"summary": "Link source"},
+                },
+            }
+        ],
+    )
+
+    resp = await client.post(
+        "/api/admin/import", json={"issues": [issue_a, issue_b]}, headers=AUTH
+    )
+    assert resp.status_code == 200
+    assert resp.json()["imported"] == 2
+
+    issue_resp = await client.get("/rest/api/2/issue/LNKTEST-2", headers=AUTH)
+    assert issue_resp.status_code == 200
+    links = issue_resp.json()["fields"]["issuelinks"]
+    assert len(links) >= 1
+    link_keys = []
+    for link in links:
+        if "outwardIssue" in link:
+            link_keys.append(link["outwardIssue"]["key"])
+        if "inwardIssue" in link:
+            link_keys.append(link["inwardIssue"]["key"])
+    assert "LNKTEST-1" in link_keys
+
+
+@pytest.mark.asyncio
+async def test_api_import_jira_api_with_parent(client):
+    """Parent/epic link from Jira REST API format is resolved."""
+    parent = _jira_api_issue("PARTEST-1", "Parent Epic", issuetype="Epic")
+    child = _jira_api_issue(
+        "PARTEST-2", "Child Story",
+        issuetype="Story",
+        parent={"id": "1", "key": "PARTEST-1"},
+    )
+
+    resp = await client.post(
+        "/api/admin/import", json={"issues": [parent, child]}, headers=AUTH
+    )
+    assert resp.status_code == 200
+    assert resp.json()["imported"] == 2
+
+    child_resp = await client.get("/rest/api/2/issue/PARTEST-2", headers=AUTH)
+    assert child_resp.status_code == 200
+    parent_field = child_resp.json()["fields"]["parent"]
+    assert parent_field is not None
+    assert parent_field["key"] == "PARTEST-1"
+
+
+@pytest.mark.asyncio
+async def test_api_import_flat_format_still_works(client):
+    """Existing flat format continues to work after Jira API format support."""
+    issue = {
+        "key": "FLAT-1",
+        "summary": "Flat format issue",
+        "status": "Open",
+        "priority": "Minor",
+        "issue_type": "Task",
+        "reporter": "Flat Reporter",
+        "project": {"key": "FLAT", "name": "Flat Project"},
+        "labels": ["flat-test"],
+        "components": [{"name": "Core"}],
+        "affects_versions": [],
+        "fix_versions": [],
+    }
+
+    resp = await client.post("/api/admin/import", json={"issues": [issue]}, headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["imported"] == 1
+
+    issue_resp = await client.get("/rest/api/2/issue/FLAT-1", headers=AUTH)
+    assert issue_resp.status_code == 200
+    fields = issue_resp.json()["fields"]
+    assert fields["summary"] == "Flat format issue"
+    assert fields["status"]["name"] == "Open"
+    assert fields["issuetype"]["name"] == "Task"
+    assert "flat-test" in fields["labels"]
