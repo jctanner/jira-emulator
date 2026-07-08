@@ -6,7 +6,7 @@ import tempfile
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jira_emulator.auth.middleware import get_current_user
@@ -15,6 +15,7 @@ from jira_emulator.models.user import User
 from jira_emulator.schemas.admin import ImportRequest, ImportResponse
 from jira_emulator.services.config_import_service import import_project_config
 from jira_emulator.services.import_service import import_archive, import_issues
+from jira_emulator.services.project_admin_service import create_project, delete_project
 from jira_emulator.services.seed_service import load_seed_data
 from jira_emulator.services.snapshot_service import (
     create_snapshot,
@@ -25,6 +26,25 @@ from jira_emulator.services.snapshot_service import (
 )
 
 router = APIRouter(prefix="/api/admin")
+
+
+class AdminProjectCreateBody(BaseModel):
+    key: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    description: str | None = None
+    lead: str | None = None
+    project_type_key: str = "software"
+
+
+def _project_response(project) -> dict:
+    return {
+        "id": str(project.id),
+        "key": project.key,
+        "name": project.name,
+        "description": project.description or "",
+        "lead": project.lead or "",
+        "projectTypeKey": project.project_type_key,
+    }
 
 
 @router.post("/import", response_model=ImportResponse)
@@ -144,6 +164,40 @@ async def import_project_config_upload(
         "projects": result.projects,
         "errors": result.errors,
     }
+
+
+@router.post("/projects", status_code=201)
+async def create_admin_project(
+    body: AdminProjectCreateBody,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a project from the admin API."""
+    try:
+        project = await create_project(
+            db,
+            key=body.key,
+            name=body.name,
+            description=body.description,
+            lead=body.lead,
+            project_type_key=body.project_type_key,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _project_response(project)
+
+
+@router.delete("/projects/{project_key}", status_code=204)
+async def delete_admin_project(
+    project_key: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a project and its issues from the admin API."""
+    result = await delete_project(db, project_key)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Project {project_key} not found")
+    return Response(status_code=204)
 
 
 @router.post("/reset")

@@ -5,6 +5,78 @@
 {% block content %}
 <h1>Administration</h1>
 
+{% if project_message %}
+<div class="result-banner result-banner-success">{{ project_message }}</div>
+{% endif %}
+{% if project_error %}
+<div class="result-banner result-banner-error">{{ project_error }}</div>
+{% endif %}
+
+<div class="card">
+    <h2>Project Maintenance</h2>
+
+    <form method="post" action="/admin/projects" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--ds-space-100); align-items: end; margin-bottom: var(--ds-space-300);">
+        <div class="form-field" style="margin-bottom: 0;">
+            <label>Key</label>
+            <input type="text" name="key" maxlength="32" placeholder="PROJ" required style="width: 100%; text-transform: uppercase;">
+        </div>
+        <div class="form-field" style="margin-bottom: 0;">
+            <label>Name</label>
+            <input type="text" name="name" placeholder="Project name" required style="width: 100%;">
+        </div>
+        <div class="form-field" style="margin-bottom: 0;">
+            <label>Description</label>
+            <input type="text" name="description" placeholder="Optional" style="width: 100%;">
+        </div>
+        <div class="form-field" style="margin-bottom: 0;">
+            <label>Lead</label>
+            <input type="text" name="lead" placeholder="Optional" style="width: 100%;">
+        </div>
+        <input type="hidden" name="project_type_key" value="software">
+        <button type="submit" class="btn btn-primary">Add Project</button>
+    </form>
+
+    {% if projects %}
+    <table>
+        <thead>
+            <tr>
+                <th>Key</th>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Lead</th>
+                <th style="text-align: right;">Issues</th>
+                <th style="text-align: right;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for project in projects %}
+            <tr>
+                <td><a class="issue-key-link" href="/project/{{ project.key }}">{{ project.key }}</a></td>
+                <td>{{ project.name }}</td>
+                <td>{{ project.description or '' }}</td>
+                <td>{{ project.lead or '' }}</td>
+                <td style="text-align: right;">
+                    {% if project.issue_count > 0 %}
+                    <a href="/issues?project={{ project.key }}">{{ project.issue_count }}</a>
+                    {% else %}
+                    {{ project.issue_count }}
+                    {% endif %}
+                </td>
+                <td style="text-align: right; white-space: nowrap;">
+                    <form method="post" action="/admin/projects/{{ project.key }}/delete" style="display: inline;"
+                          onsubmit="return confirm('Delete project {{ project.key }} and {{ project.issue_count }} issue{{ 's' if project.issue_count != 1 else '' }}?');">
+                        <button type="submit" class="btn" style="background: #AE2E24; color: #fff;">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: var(--ds-text-subtlest); font-style: italic;">No projects yet.</p>
+    {% endif %}
+</div>
+
 <div class="card">
     <h2>Import Issues</h2>
     <p style="color: var(--ds-text-subtle); margin-bottom: var(--ds-space-200);">

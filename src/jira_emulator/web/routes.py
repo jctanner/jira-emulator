@@ -5,6 +5,7 @@ import logging
 import math
 import os
 from datetime import datetime
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -26,6 +27,7 @@ from jira_emulator.models.project import Project
 from jira_emulator.models.status import Status
 from jira_emulator.models.user import User
 from jira_emulator.services import history_service, issue_service, search_service
+from jira_emulator.services.project_admin_service import create_project, delete_project
 from jira_emulator.services.snapshot_service import (
     create_snapshot,
     delete_snapshot,
@@ -40,6 +42,48 @@ logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 
 router = APIRouter()
+
+
+async def _admin_template_context(request: Request, db: AsyncSession, **extra):
+    """Build shared context for the admin page."""
+    snapshots_enabled = is_snapshot_enabled()
+    project_stmt = (
+        select(
+            Project.id,
+            Project.key,
+            Project.name,
+            Project.description,
+            Project.lead,
+            Project.project_type_key,
+            func.count(Issue.id).label("issue_count"),
+        )
+        .outerjoin(Issue, Issue.project_id == Project.id)
+        .group_by(Project.id)
+        .order_by(Project.key)
+    )
+    project_rows = (await db.execute(project_stmt)).all()
+
+    context = {
+        "version": __version__,
+        "snapshots_enabled": snapshots_enabled,
+        "snapshots": list_snapshots() if snapshots_enabled else [],
+        "projects": [
+            {
+                "id": row.id,
+                "key": row.key,
+                "name": row.name,
+                "description": row.description,
+                "lead": row.lead,
+                "project_type_key": row.project_type_key,
+                "issue_count": row.issue_count,
+            }
+            for row in project_rows
+        ],
+        "project_message": request.query_params.get("project_message"),
+        "project_error": request.query_params.get("project_error"),
+    }
+    context.update(extra)
+    return context
 
 
 # ---------------------------------------------------------------------------
@@ -272,18 +316,12 @@ async def issue_detail(request: Request, key: str, db: AsyncSession = Depends(ge
 # GET /admin/import — Import form
 # ---------------------------------------------------------------------------
 @router.get("/admin/import", response_class=HTMLResponse)
-async def admin_import_form(request: Request):
+async def admin_import_form(request: Request, db: AsyncSession = Depends(get_db)):
     """Render the JSON import upload form."""
-    snapshots_enabled = is_snapshot_enabled()
-    snapshots = list_snapshots() if snapshots_enabled else []
     return templates.TemplateResponse(
         request=request,
         name="admin_import.html",
-        context={
-            "version": __version__,
-            "snapshots_enabled": snapshots_enabled,
-            "snapshots": snapshots,
-        },
+        context=await _admin_template_context(request, db),
     )
 
 
@@ -354,6 +392,49 @@ async def admin_reset(request: Request):
     return RedirectResponse(url="/", status_code=303)
 
 
+@router.post("/admin/projects")
+async def admin_project_create(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    key: str = Form(...),
+    name: str = Form(...),
+    description: str = Form(""),
+    lead: str = Form(""),
+    project_type_key: str = Form("software"),
+):
+    """Create a project from the admin UI."""
+    try:
+        project = await create_project(
+            db,
+            key=key,
+            name=name,
+            description=description,
+            lead=lead,
+            project_type_key=project_type_key,
+        )
+    except ValueError as exc:
+        query = urlencode({"project_error": str(exc)})
+    else:
+        query = urlencode({"project_message": f"Project {project.key} created."})
+    return RedirectResponse(url=f"/admin/import?{query}", status_code=303)
+
+
+@router.post("/admin/projects/{project_key}/delete")
+async def admin_project_delete(
+    request: Request,
+    project_key: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a project from the admin UI."""
+    result = await delete_project(db, project_key)
+    if result is None:
+        query = urlencode({"project_error": f"Project {project_key} not found."})
+    else:
+        detail = f" Deleted {result.issues_deleted} issue{'s' if result.issues_deleted != 1 else ''}."
+        query = urlencode({"project_message": f"Project {result.project.key} deleted.{detail}"})
+    return RedirectResponse(url=f"/admin/import?{query}", status_code=303)
+
+
 @router.post("/admin/import", response_class=HTMLResponse)
 async def admin_import_upload(
     request: Request,
@@ -410,59 +491,53 @@ async def admin_import_upload(
 
             result = await import_issues(db, issues)
 
-        snap_enabled = is_snapshot_enabled()
         return templates.TemplateResponse(
             request=request,
             name="admin_import.html",
-            context={
-                "result": {
+            context=await _admin_template_context(
+                request,
+                db,
+                result={
                     "imported": result.imported,
                     "updated": result.updated,
                     "errors": result.errors,
                     "projects_created": result.projects_created,
                     "users_created": result.users_created,
                 },
-                "version": __version__,
-                "snapshots_enabled": snap_enabled,
-                "snapshots": list_snapshots() if snap_enabled else [],
-            },
+            ),
         )
     except json.JSONDecodeError as exc:
-        snap_enabled = is_snapshot_enabled()
         return templates.TemplateResponse(
             request=request,
             name="admin_import.html",
-            context={
-                "result": {
+            context=await _admin_template_context(
+                request,
+                db,
+                result={
                     "imported": 0,
                     "updated": 0,
                     "errors": [f"Invalid JSON: {exc}"],
                     "projects_created": [],
                     "users_created": [],
                 },
-                "version": __version__,
-                "snapshots_enabled": snap_enabled,
-                "snapshots": list_snapshots() if snap_enabled else [],
-            },
+            ),
         )
     except Exception as exc:
         logger.exception("Import failed")
-        snap_enabled = is_snapshot_enabled()
         return templates.TemplateResponse(
             request=request,
             name="admin_import.html",
-            context={
-                "result": {
+            context=await _admin_template_context(
+                request,
+                db,
+                result={
                     "imported": 0,
                     "updated": 0,
                     "errors": [str(exc)],
                     "projects_created": [],
                     "users_created": [],
                 },
-                "version": __version__,
-                "snapshots_enabled": snap_enabled,
-                "snapshots": list_snapshots() if snap_enabled else [],
-            },
+            ),
         )
 
 
