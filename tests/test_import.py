@@ -881,13 +881,94 @@ async def test_api_import_jira_api_with_links(client):
     assert issue_resp.status_code == 200
     links = issue_resp.json()["fields"]["issuelinks"]
     assert len(links) >= 1
-    link_keys = []
-    for link in links:
-        if "outwardIssue" in link:
-            link_keys.append(link["outwardIssue"]["key"])
-        if "inwardIssue" in link:
-            link_keys.append(link["inwardIssue"]["key"])
-    assert "LNKTEST-1" in link_keys
+    assert any(link.get("outwardIssue", {}).get("key") == "LNKTEST-1" for link in links)
+
+    source_resp = await client.get("/rest/api/2/issue/LNKTEST-1", headers=AUTH)
+    assert source_resp.status_code == 200
+    source_links = source_resp.json()["fields"]["issuelinks"]
+    assert any(link.get("inwardIssue", {}).get("key") == "LNKTEST-2" for link in source_links)
+
+
+@pytest.mark.asyncio
+async def test_api_import_jira_api_with_inward_link_preserves_direction(client):
+    """Imported inwardIssue links keep the source issue on the inward side."""
+    issue_a = _jira_api_issue(
+        "INLINK-1",
+        "Blocked issue",
+        issuelinks=[
+            {
+                "type": {
+                    "id": "10001",
+                    "name": "Blocks",
+                    "inward": "is blocked by",
+                    "outward": "blocks",
+                },
+                "inwardIssue": {
+                    "id": "2",
+                    "key": "INLINK-2",
+                    "fields": {"summary": "Blocker issue"},
+                },
+            }
+        ],
+    )
+    issue_b = _jira_api_issue("INLINK-2", "Blocker issue")
+
+    resp = await client.post(
+        "/api/admin/import", json={"issues": [issue_a, issue_b]}, headers=AUTH
+    )
+    assert resp.status_code == 200
+    assert resp.json()["imported"] == 2
+
+    blocked_resp = await client.get("/rest/api/2/issue/INLINK-1", headers=AUTH)
+    assert blocked_resp.status_code == 200
+    blocked_links = blocked_resp.json()["fields"]["issuelinks"]
+    assert any(link.get("inwardIssue", {}).get("key") == "INLINK-2" for link in blocked_links)
+
+    blocker_resp = await client.get("/rest/api/2/issue/INLINK-2", headers=AUTH)
+    assert blocker_resp.status_code == 200
+    blocker_links = blocker_resp.json()["fields"]["issuelinks"]
+    assert any(link.get("outwardIssue", {}).get("key") == "INLINK-1" for link in blocker_links)
+
+
+@pytest.mark.asyncio
+async def test_api_import_jira_api_with_cloners_link_preserves_direction(client):
+    """Imported Cloners links keep the generated issue as cloning the source."""
+    source = _jira_api_issue("CLONEIMP-1", "Source RFE")
+    derived = _jira_api_issue(
+        "CLONEIMP-2",
+        "Generated strategy",
+        issuelinks=[
+            {
+                "type": {
+                    "id": "10002",
+                    "name": "Cloners",
+                    "inward": "is cloned by",
+                    "outward": "clones",
+                },
+                "outwardIssue": {
+                    "id": "1",
+                    "key": "CLONEIMP-1",
+                    "fields": {"summary": "Source RFE"},
+                },
+            }
+        ],
+    )
+
+    resp = await client.post(
+        "/api/admin/import", json={"issues": [source, derived]}, headers=AUTH
+    )
+    assert resp.status_code == 200
+    assert resp.json()["imported"] == 2
+
+    derived_resp = await client.get("/rest/api/2/issue/CLONEIMP-2", headers=AUTH)
+    assert derived_resp.status_code == 200
+    derived_links = derived_resp.json()["fields"]["issuelinks"]
+    assert any(link.get("outwardIssue", {}).get("key") == "CLONEIMP-1" for link in derived_links)
+
+    source_resp = await client.get("/rest/api/2/issue/CLONEIMP-1", headers=AUTH)
+    assert source_resp.status_code == 200
+    source_links = source_resp.json()["fields"]["issuelinks"]
+    assert any(link.get("inwardIssue", {}).get("key") == "CLONEIMP-2" for link in source_links)
 
 
 @pytest.mark.asyncio

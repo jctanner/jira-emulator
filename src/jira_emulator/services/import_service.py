@@ -656,12 +656,12 @@ async def _resolve_issue_links(db: AsyncSession, deferred_links: list[dict]) -> 
 
             if inward_issue_info:
                 target_key = inward_issue_info.get("key", "")
-                inward_key = target_key
-                outward_key = source_key
-            elif outward_issue_info:
-                target_key = outward_issue_info.get("key", "")
                 inward_key = source_key
                 outward_key = target_key
+            elif outward_issue_info:
+                target_key = outward_issue_info.get("key", "")
+                inward_key = target_key
+                outward_key = source_key
             else:
                 continue
 
