@@ -810,8 +810,8 @@
         text = text.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>');
         // Italic
         text = text.replace(/(?<![a-zA-Z0-9\/:])_([^_\n]+)_(?![a-zA-Z0-9])/g, '<em>$1</em>');
-        // Strikethrough
-        text = text.replace(/-([^-\n]+)-/g, '<del>$1</del>');
+        // Strikethrough (only when dashes are not part of a word like RHOAIENG-1234)
+        text = text.replace(/(^|[\s(])-([^-\n]+)-([\s),.]|$)/g, '$1<del>$2</del>$3');
         // Monospace
         text = text.replace(/\{\{([^}]+)\}\}/g, '<code>$1</code>');
         // Links [text|url]
