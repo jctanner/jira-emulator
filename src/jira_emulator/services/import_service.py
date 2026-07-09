@@ -451,10 +451,12 @@ async def import_issue(
             await db.delete(ic)
         await db.flush()
 
+        seen_components: set[str] = set()
         for comp_entry in issue_data.get("components") or []:
             comp_name = comp_entry.get("name") if isinstance(comp_entry, dict) else comp_entry
-            if not comp_name:
+            if not comp_name or comp_name in seen_components:
                 continue
+            seen_components.add(comp_name)
             comp = await _get_or_create_component(db, project.id, comp_name)
             db.add(IssueComponent(issue_id=issue.id, component_id=comp.id))
         await db.flush()

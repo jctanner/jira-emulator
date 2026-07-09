@@ -339,10 +339,12 @@ async def create_issue(
             seen_labels.add(label_text)
 
     # -- components --
+    seen_components: set[str] = set()
     for comp_data in fields.get("components", []):
         comp_name = comp_data.get("name")
-        if not comp_name:
+        if not comp_name or comp_name in seen_components:
             continue
+        seen_components.add(comp_name)
         # Look up existing component on the project
         result = await db.execute(
             select(Component).where(
@@ -663,10 +665,12 @@ async def _apply_field_updates(
         for ca in list(issue.component_associations):
             await db.delete(ca)
         await db.flush()
+        seen_components: set[str] = set()
         for comp_data in fields["components"]:
             comp_name = comp_data.get("name")
-            if not comp_name:
+            if not comp_name or comp_name in seen_components:
                 continue
+            seen_components.add(comp_name)
             result = await db.execute(
                 select(Component).where(
                     Component.project_id == issue.project_id,
@@ -815,10 +819,12 @@ async def _apply_update_ops(
 
     # components
     if "components" in update_ops:
+        seen_added_components: set[str] = set()
         for op in update_ops["components"]:
             if "add" in op:
                 comp_name = op["add"].get("name") if isinstance(op["add"], dict) else op["add"]
-                if comp_name:
+                if comp_name and comp_name not in seen_added_components:
+                    seen_added_components.add(comp_name)
                     result = await db.execute(
                         select(Component).where(
                             Component.project_id == issue.project_id,
@@ -830,7 +836,16 @@ async def _apply_update_ops(
                         component = Component(project_id=issue.project_id, name=comp_name)
                         db.add(component)
                         await db.flush()
-                    db.add(IssueComponent(issue_id=issue.id, component_id=component.id))
+                    existing = next(
+                        (
+                            ca
+                            for ca in issue.component_associations
+                            if ca.component_id == component.id or ca.component.name == comp_name
+                        ),
+                        None,
+                    )
+                    if existing is None:
+                        db.add(IssueComponent(issue_id=issue.id, component_id=component.id))
             elif "remove" in op:
                 comp_name = op["remove"].get("name") if isinstance(op["remove"], dict) else op["remove"]
                 if comp_name:
