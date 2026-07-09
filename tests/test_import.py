@@ -931,6 +931,60 @@ async def test_api_import_jira_api_with_inward_link_preserves_direction(client):
 
 
 @pytest.mark.asyncio
+async def test_api_import_jira_api_with_links_is_idempotent(client):
+    """Re-importing the same linked issues should not duplicate issue links."""
+    issue_a = _jira_api_issue("IDLINK-1", "Link source")
+    issue_b = _jira_api_issue(
+        "IDLINK-2",
+        "Link target",
+        issuelinks=[
+            {
+                "id": "500",
+                "type": {
+                    "id": "10001",
+                    "name": "Blocks",
+                    "inward": "is blocked by",
+                    "outward": "blocks",
+                },
+                "outwardIssue": {
+                    "id": "1",
+                    "key": "IDLINK-1",
+                    "fields": {"summary": "Link source"},
+                },
+            }
+        ],
+    )
+    payload = {"issues": [issue_a, issue_b]}
+
+    first_resp = await client.post("/api/admin/import", json=payload, headers=AUTH)
+    assert first_resp.status_code == 200
+    assert first_resp.json()["imported"] == 2
+    second_resp = await client.post("/api/admin/import", json=payload, headers=AUTH)
+    assert second_resp.status_code == 200
+    assert second_resp.json()["updated"] == 2
+
+    target_resp = await client.get("/rest/api/2/issue/IDLINK-2", headers=AUTH)
+    assert target_resp.status_code == 200
+    target_links = target_resp.json()["fields"]["issuelinks"]
+    matching_target_links = [
+        link
+        for link in target_links
+        if link["type"]["name"] == "Blocks" and link.get("outwardIssue", {}).get("key") == "IDLINK-1"
+    ]
+    assert len(matching_target_links) == 1
+
+    source_resp = await client.get("/rest/api/2/issue/IDLINK-1", headers=AUTH)
+    assert source_resp.status_code == 200
+    source_links = source_resp.json()["fields"]["issuelinks"]
+    matching_source_links = [
+        link
+        for link in source_links
+        if link["type"]["name"] == "Blocks" and link.get("inwardIssue", {}).get("key") == "IDLINK-2"
+    ]
+    assert len(matching_source_links) == 1
+
+
+@pytest.mark.asyncio
 async def test_api_import_jira_api_with_cloners_link_preserves_direction(client):
     """Imported Cloners links keep the generated issue as cloning the source."""
     source = _jira_api_issue("CLONEIMP-1", "Source RFE")

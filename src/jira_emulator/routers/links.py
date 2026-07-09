@@ -76,6 +76,18 @@ async def create_issue_link(
             detail=_jira_error([f"Issue '{outward_key}' not found"]),
         )
 
+    existing = (
+        await db.execute(
+            select(IssueLink).where(
+                IssueLink.link_type_id == link_type.id,
+                IssueLink.inward_issue_id == inward_issue.id,
+                IssueLink.outward_issue_id == outward_issue.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return Response(status_code=201)
+
     # -- create the link --
     link = IssueLink(
         link_type_id=link_type.id,

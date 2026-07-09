@@ -1,6 +1,6 @@
 """IssueLinkType and IssueLink models."""
 
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from jira_emulator.database import Base
@@ -17,6 +17,14 @@ class IssueLinkType(Base):
 
 class IssueLink(Base):
     __tablename__ = "issue_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "link_type_id",
+            "inward_issue_id",
+            "outward_issue_id",
+            name="uq_issue_links_type_inward_outward",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     link_type_id: Mapped[int] = mapped_column(Integer, ForeignKey("issue_link_types.id"), nullable=False)
