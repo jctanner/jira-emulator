@@ -1,7 +1,13 @@
 """Tests for issue CRUD, transitions, and comments."""
 
-import httpx
+import asyncio
 
+import httpx
+from sqlalchemy import delete, select
+
+from jira_emulator.database import get_session_factory
+from jira_emulator.models.issue import IssueSequence
+from jira_emulator.models.project import Project
 from tests.conftest import AUTH_HEADER
 
 # ---------------------------------------------------------------------------
@@ -43,6 +49,48 @@ async def test_create_issue(client: httpx.AsyncClient):
     assert data["key"] == "RHOAIENG-1"
     assert "id" in data
     assert "self" in data
+
+
+async def test_concurrent_issue_creation_allocates_unique_keys(client: httpx.AsyncClient):
+    """Concurrent creates in one project reserve distinct issue numbers."""
+    responses = await asyncio.gather(
+        *(
+            client.post(
+                "/rest/api/2/issue",
+                json={
+                    "fields": {
+                        "project": {"key": "RHOAIENG"},
+                        "summary": f"Concurrent issue {number}",
+                        "issuetype": {"name": "Bug"},
+                    }
+                },
+                headers=AUTH_HEADER,
+            )
+            for number in range(8)
+        )
+    )
+
+    assert [response.status_code for response in responses] == [201] * 8
+    keys = [response.json()["key"] for response in responses]
+    assert len(keys) == len(set(keys))
+    assert {int(key.rsplit("-", 1)[1]) for key in keys} == set(range(1, 9))
+
+
+async def test_concurrent_issue_creation_recreates_missing_sequence(client: httpx.AsyncClient):
+    """Concurrent creates safely initialize a missing project sequence."""
+    factory = get_session_factory()
+    async with factory() as db:
+        project_id = (await db.execute(select(Project.id).where(Project.key == "RHOAIENG"))).scalar_one()
+        await db.execute(delete(IssueSequence).where(IssueSequence.project_id == project_id))
+        await db.commit()
+
+    responses = await asyncio.gather(
+        *(_create_issue(client, summary=f"Missing sequence {number}") for number in range(4))
+    )
+
+    keys = [response["key"] for response in responses]
+    assert len(keys) == len(set(keys))
+    assert {int(key.rsplit("-", 1)[1]) for key in keys} == set(range(1, 5))
 
 
 async def test_get_issue(client: httpx.AsyncClient):

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Integer, func, select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,7 +11,7 @@ from jira_emulator.models.attachment import Attachment
 from jira_emulator.models.comment import Comment
 from jira_emulator.models.component import Component, IssueComponent
 from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue
-from jira_emulator.models.issue import Issue, IssueSequence
+from jira_emulator.models.issue import Issue
 from jira_emulator.models.issue_history import IssueHistory
 from jira_emulator.models.issue_type import IssueType
 from jira_emulator.models.label import Label
@@ -217,29 +217,38 @@ async def create_issue(
         raise ValueError(f"Issue type '{issue_type_name}' not found")
 
     # -- allocate key --
-    result = await db.execute(select(IssueSequence).where(IssueSequence.project_id == project.id))
-    seq = result.scalar_one_or_none()
-    if seq is None:
-        seq = IssueSequence(project_id=project.id, next_number=1)
-        db.add(seq)
-        await db.flush()
-
-    # Ensure the sequence is ahead of any existing issues (e.g. from imports).
-    # Use CAST to compare numerically — lexicographic max is wrong because
-    # "RHAIRFE-999" sorts after "RHAIRFE-1618" as strings.
+    # Reserve the number in one write statement. The upsert also creates a
+    # missing sequence and repairs one that is behind explicitly imported
+    # issue keys. SQLite serializes these writes, so concurrent sessions cannot
+    # observe and reserve the same value.
     prefix = f"{project.key}-"
-    prefix_len = len(prefix)
-    max_result = await db.execute(
-        select(func.max(func.cast(func.substr(Issue.key, prefix_len + 1), Integer))).where(
-            Issue.project_id == project.id
-        )
+    result = await db.execute(
+        text(
+            """
+            INSERT INTO issue_sequences (project_id, next_number)
+            VALUES (
+                :project_id,
+                COALESCE(
+                    (SELECT MAX(CAST(SUBSTR(key, :suffix_start) AS INTEGER))
+                     FROM issues WHERE project_id = :project_id),
+                    0
+                ) + 2
+            )
+            ON CONFLICT(project_id) DO UPDATE SET
+                next_number = MAX(
+                    issue_sequences.next_number,
+                    COALESCE(
+                        (SELECT MAX(CAST(SUBSTR(key, :suffix_start) AS INTEGER))
+                         FROM issues WHERE project_id = :project_id),
+                        0
+                    ) + 1
+                ) + 1
+            RETURNING next_number - 1
+            """
+        ),
+        {"project_id": project.id, "suffix_start": len(prefix) + 1},
     )
-    max_existing = max_result.scalar_one_or_none()
-    if max_existing is not None and seq.next_number <= max_existing:
-        seq.next_number = max_existing + 1
-
-    issue_number = seq.next_number
-    seq.next_number = issue_number + 1
+    issue_number = result.scalar_one()
     issue_key = f"{project.key}-{issue_number}"
 
     # -- assignee --
