@@ -658,12 +658,19 @@ async def _resolve_issue_links(db: AsyncSession, deferred_links: list[dict]) -> 
 
             if inward_issue_info:
                 target_key = inward_issue_info.get("key", "")
-                inward_key = source_key
-                outward_key = target_key
-            elif outward_issue_info:
-                target_key = outward_issue_info.get("key", "")
+                # The imported link is from the source issue's GET perspective:
+                # source shows target under inwardIssue. Internally, that means
+                # source is the stored outward endpoint and target is stored
+                # inward, so the serializer can reproduce the same GET shape.
                 inward_key = target_key
                 outward_key = source_key
+            elif outward_issue_info:
+                target_key = outward_issue_info.get("key", "")
+                # Source shows target under outwardIssue. Internally, that
+                # means source is the stored inward endpoint and target is
+                # stored outward.
+                inward_key = source_key
+                outward_key = target_key
             else:
                 continue
 

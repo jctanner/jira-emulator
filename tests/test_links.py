@@ -73,7 +73,7 @@ async def test_create_duplicate_issue_link_is_idempotent(client):
     matching_inward_links = [
         link
         for link in inward_links
-        if link["type"]["name"] == "Blocks" and link.get("inwardIssue", {}).get("key") == i2["key"]
+        if link["type"]["name"] == "Blocks" and link.get("outwardIssue", {}).get("key") == i2["key"]
     ]
     assert len(matching_inward_links) == 1
 
@@ -82,9 +82,76 @@ async def test_create_duplicate_issue_link_is_idempotent(client):
     matching_outward_links = [
         link
         for link in outward_links
-        if link["type"]["name"] == "Blocks" and link.get("outwardIssue", {}).get("key") == i1["key"]
+        if link["type"]["name"] == "Blocks" and link.get("inwardIssue", {}).get("key") == i1["key"]
     ]
     assert len(matching_outward_links) == 1
+
+
+@pytest.mark.asyncio
+async def test_blocks_link_response_matches_real_jira_direction(client):
+    """Real Jira: inward endpoint sees other issue as outwardIssue; outward sees inwardIssue."""
+    blocker = await _create_issue(client, summary="Issue A blocks B")
+    blocked = await _create_issue(client, summary="Issue B is blocked by A")
+    payload = {
+        "type": {"name": "Blocks"},
+        "inwardIssue": {"key": blocker["key"]},
+        "outwardIssue": {"key": blocked["key"]},
+    }
+
+    resp = await client.post("/rest/api/2/issueLink", json=payload, headers=AUTH)
+    assert resp.status_code == 201
+
+    blocker_resp = await client.get(f"/rest/api/2/issue/{blocker['key']}", headers=AUTH)
+    blocker_links = blocker_resp.json()["fields"]["issuelinks"]
+    assert any(
+        link["type"]["name"] == "Blocks"
+        and link.get("outwardIssue", {}).get("key") == blocked["key"]
+        for link in blocker_links
+    )
+
+    blocked_resp = await client.get(f"/rest/api/2/issue/{blocked['key']}", headers=AUTH)
+    blocked_links = blocked_resp.json()["fields"]["issuelinks"]
+    assert any(
+        link["type"]["name"] == "Blocks"
+        and link.get("inwardIssue", {}).get("key") == blocker["key"]
+        for link in blocked_links
+    )
+
+
+@pytest.mark.asyncio
+async def test_cloners_link_response_matches_real_jira_direction(client):
+    """Real Jira: generated strategy stored as inwardIssue sees source as outwardIssue."""
+    strategy = await _create_issue(client, project="RHAISTRAT", summary="Generated strategy", issuetype="Feature")
+    source_rfe = await _create_issue(
+        client,
+        project="RHAIRFE",
+        summary="Source RFE",
+        issuetype="Feature Request",
+    )
+    payload = {
+        "type": {"name": "Cloners"},
+        "inwardIssue": {"key": strategy["key"]},
+        "outwardIssue": {"key": source_rfe["key"]},
+    }
+
+    resp = await client.post("/rest/api/2/issueLink", json=payload, headers=AUTH)
+    assert resp.status_code == 201
+
+    strategy_resp = await client.get(f"/rest/api/2/issue/{strategy['key']}", headers=AUTH)
+    strategy_links = strategy_resp.json()["fields"]["issuelinks"]
+    assert any(
+        link["type"]["name"] == "Cloners"
+        and link.get("outwardIssue", {}).get("key") == source_rfe["key"]
+        for link in strategy_links
+    )
+
+    rfe_resp = await client.get(f"/rest/api/2/issue/{source_rfe['key']}", headers=AUTH)
+    rfe_links = rfe_resp.json()["fields"]["issuelinks"]
+    assert any(
+        link["type"]["name"] == "Cloners"
+        and link.get("inwardIssue", {}).get("key") == strategy["key"]
+        for link in rfe_links
+    )
 
 
 @pytest.mark.asyncio

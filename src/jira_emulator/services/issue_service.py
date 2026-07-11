@@ -1077,10 +1077,11 @@ async def format_issue_response(
 
     # -- issue links --
     issuelinks: list[dict] = []
-    # outward_links: links where this issue is the outward side.
-    # Show the OTHER issue (inward_issue) as outwardIssue in the response,
-    # matching Jira's convention where the linked issue shown is always the
-    # other end, not the current issue.
+    # outward_links: links where this issue is the stored outward side.
+    # Real Jira returns the other issue under inwardIssue because, from the
+    # current issue's perspective, the other issue is on the inward-labelled
+    # side of the relationship (for example: current issue "is blocked by"
+    # the other issue).
     for ol in issue.outward_links:
         issuelinks.append(
             {
@@ -1093,7 +1094,7 @@ async def format_issue_response(
                     "outward": ol.link_type.outward_description or "",
                     "self": f"{base_url}/rest/api/2/issueLinkType/{ol.link_type.id}",
                 },
-                "outwardIssue": {
+                "inwardIssue": {
                     "id": str(ol.inward_issue.id),
                     "key": ol.inward_issue.key,
                     "self": f"{base_url}/rest/api/2/issue/{ol.inward_issue.id}",
@@ -1103,8 +1104,11 @@ async def format_issue_response(
                 },
             }
         )
-    # inward_links: links where this issue is the inward side.
-    # Show the OTHER issue (outward_issue) as inwardIssue in the response.
+    # inward_links: links where this issue is the stored inward side.
+    # Real Jira returns the other issue under outwardIssue because, from the
+    # current issue's perspective, the other issue is on the outward-labelled
+    # side of the relationship (for example: current issue "blocks" the other
+    # issue).
     for il in issue.inward_links:
         issuelinks.append(
             {
@@ -1117,7 +1121,7 @@ async def format_issue_response(
                     "outward": il.link_type.outward_description or "",
                     "self": f"{base_url}/rest/api/2/issueLinkType/{il.link_type.id}",
                 },
-                "inwardIssue": {
+                "outwardIssue": {
                     "id": str(il.outward_issue.id),
                     "key": il.outward_issue.key,
                     "self": f"{base_url}/rest/api/2/issue/{il.outward_issue.id}",
