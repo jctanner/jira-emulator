@@ -710,7 +710,8 @@ def _jira_api_issue(key, summary, **overrides):
 async def test_api_import_jira_api_format(client):
     """Import a single issue in Jira REST API format (nested fields)."""
     issue = _jira_api_issue(
-        "JAPI-1", "Jira API format issue",
+        "JAPI-1",
+        "Jira API format issue",
         issuetype="Story",
         status="In Progress",
         priority="Critical",
@@ -813,7 +814,8 @@ async def test_api_import_file_jira_export_wrapper(client):
 async def test_api_import_jira_api_with_comments(client):
     """Comments from Jira REST API format are imported."""
     issue = _jira_api_issue(
-        "CTEST-1", "Issue with comments",
+        "CTEST-1",
+        "Issue with comments",
         comment={
             "comments": [
                 {
@@ -852,7 +854,8 @@ async def test_api_import_jira_api_with_links(client):
     """Issue links from Jira REST API format are imported."""
     issue_a = _jira_api_issue("LNKTEST-1", "Link source")
     issue_b = _jira_api_issue(
-        "LNKTEST-2", "Link target",
+        "LNKTEST-2",
+        "Link target",
         issuelinks=[
             {
                 "id": "500",
@@ -871,9 +874,7 @@ async def test_api_import_jira_api_with_links(client):
         ],
     )
 
-    resp = await client.post(
-        "/api/admin/import", json={"issues": [issue_a, issue_b]}, headers=AUTH
-    )
+    resp = await client.post("/api/admin/import", json={"issues": [issue_a, issue_b]}, headers=AUTH)
     assert resp.status_code == 200
     assert resp.json()["imported"] == 2
 
@@ -913,9 +914,7 @@ async def test_api_import_jira_api_with_inward_link_preserves_direction(client):
     )
     issue_b = _jira_api_issue("INLINK-2", "Blocker issue")
 
-    resp = await client.post(
-        "/api/admin/import", json={"issues": [issue_a, issue_b]}, headers=AUTH
-    )
+    resp = await client.post("/api/admin/import", json={"issues": [issue_a, issue_b]}, headers=AUTH)
     assert resp.status_code == 200
     assert resp.json()["imported"] == 2
 
@@ -1008,9 +1007,7 @@ async def test_api_import_jira_api_with_cloners_link_preserves_direction(client)
         ],
     )
 
-    resp = await client.post(
-        "/api/admin/import", json={"issues": [source, derived]}, headers=AUTH
-    )
+    resp = await client.post("/api/admin/import", json={"issues": [source, derived]}, headers=AUTH)
     assert resp.status_code == 200
     assert resp.json()["imported"] == 2
 
@@ -1030,14 +1027,13 @@ async def test_api_import_jira_api_with_parent(client):
     """Parent/epic link from Jira REST API format is resolved."""
     parent = _jira_api_issue("PARTEST-1", "Parent Epic", issuetype="Epic")
     child = _jira_api_issue(
-        "PARTEST-2", "Child Story",
+        "PARTEST-2",
+        "Child Story",
         issuetype="Story",
         parent={"id": "1", "key": "PARTEST-1"},
     )
 
-    resp = await client.post(
-        "/api/admin/import", json={"issues": [parent, child]}, headers=AUTH
-    )
+    resp = await client.post("/api/admin/import", json={"issues": [parent, child]}, headers=AUTH)
     assert resp.status_code == 200
     assert resp.json()["imported"] == 2
 

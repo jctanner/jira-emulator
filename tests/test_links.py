@@ -104,16 +104,14 @@ async def test_blocks_link_response_matches_real_jira_direction(client):
     blocker_resp = await client.get(f"/rest/api/2/issue/{blocker['key']}", headers=AUTH)
     blocker_links = blocker_resp.json()["fields"]["issuelinks"]
     assert any(
-        link["type"]["name"] == "Blocks"
-        and link.get("outwardIssue", {}).get("key") == blocked["key"]
+        link["type"]["name"] == "Blocks" and link.get("outwardIssue", {}).get("key") == blocked["key"]
         for link in blocker_links
     )
 
     blocked_resp = await client.get(f"/rest/api/2/issue/{blocked['key']}", headers=AUTH)
     blocked_links = blocked_resp.json()["fields"]["issuelinks"]
     assert any(
-        link["type"]["name"] == "Blocks"
-        and link.get("inwardIssue", {}).get("key") == blocker["key"]
+        link["type"]["name"] == "Blocks" and link.get("inwardIssue", {}).get("key") == blocker["key"]
         for link in blocked_links
     )
 
@@ -140,16 +138,14 @@ async def test_cloners_link_response_matches_real_jira_direction(client):
     strategy_resp = await client.get(f"/rest/api/2/issue/{strategy['key']}", headers=AUTH)
     strategy_links = strategy_resp.json()["fields"]["issuelinks"]
     assert any(
-        link["type"]["name"] == "Cloners"
-        and link.get("outwardIssue", {}).get("key") == source_rfe["key"]
+        link["type"]["name"] == "Cloners" and link.get("outwardIssue", {}).get("key") == source_rfe["key"]
         for link in strategy_links
     )
 
     rfe_resp = await client.get(f"/rest/api/2/issue/{source_rfe['key']}", headers=AUTH)
     rfe_links = rfe_resp.json()["fields"]["issuelinks"]
     assert any(
-        link["type"]["name"] == "Cloners"
-        and link.get("inwardIssue", {}).get("key") == strategy["key"]
+        link["type"]["name"] == "Cloners" and link.get("inwardIssue", {}).get("key") == strategy["key"]
         for link in rfe_links
     )
 

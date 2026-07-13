@@ -389,8 +389,8 @@ async def delete_component(
         )
 
     associations = (
-        await db.execute(select(IssueComponent).where(IssueComponent.component_id == component.id))
-    ).scalars().all()
+        (await db.execute(select(IssueComponent).where(IssueComponent.component_id == component.id))).scalars().all()
+    )
     if target is not None:
         for association in associations:
             existing = (

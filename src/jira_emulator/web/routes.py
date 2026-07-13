@@ -787,7 +787,9 @@ async def rollback_issue_web(
 
     # Record a rollback history entry
     await history_service.record_change(
-        db, issue.id, None,
+        db,
+        issue.id,
+        None,
         "Rollback",
         f"Rolled back to history entry #{history_id}",
         None,

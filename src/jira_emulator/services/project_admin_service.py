@@ -56,9 +56,7 @@ async def create_project(
     if not project_name:
         raise ValueError("Project name is required")
 
-    existing = (
-        await db.execute(select(Project).where(func.upper(Project.key) == project_key))
-    ).scalar_one_or_none()
+    existing = (await db.execute(select(Project).where(func.upper(Project.key) == project_key))).scalar_one_or_none()
     if existing is not None:
         raise ValueError(f"Project {project_key} already exists")
 
@@ -100,12 +98,8 @@ async def delete_project(db: AsyncSession, key_or_id: str) -> ProjectMaintenance
     if project is None:
         return None
 
-    issue_ids = list(
-        (await db.execute(select(Issue.id).where(Issue.project_id == project.id))).scalars().all()
-    )
-    version_ids = list(
-        (await db.execute(select(Version.id).where(Version.project_id == project.id))).scalars().all()
-    )
+    issue_ids = list((await db.execute(select(Issue.id).where(Issue.project_id == project.id))).scalars().all())
+    version_ids = list((await db.execute(select(Version.id).where(Version.project_id == project.id))).scalars().all())
     component_ids = list(
         (await db.execute(select(Component.id).where(Component.project_id == project.id))).scalars().all()
     )
