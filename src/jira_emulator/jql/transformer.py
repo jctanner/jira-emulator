@@ -633,6 +633,26 @@ class JQLTransformer:
                     IssueCustomFieldValue.value_string.ilike(f"%{value}%"),
                 )
             )
+        if op in ("op_gt", "op_gte", "op_lt", "op_lte"):
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"Operator '{op}' requires a numeric value for custom field '{field_id}', got '{value}'"
+                )
+            _numeric_ops = {
+                "op_gt": IssueCustomFieldValue.value_number > numeric_value,
+                "op_gte": IssueCustomFieldValue.value_number >= numeric_value,
+                "op_lt": IssueCustomFieldValue.value_number < numeric_value,
+                "op_lte": IssueCustomFieldValue.value_number <= numeric_value,
+            }
+            return exists(
+                select(IssueCustomFieldValue.id).where(
+                    IssueCustomFieldValue.issue_id == Issue.id,
+                    IssueCustomFieldValue.custom_field_id.in_(cf_subq),
+                    _numeric_ops[op],
+                )
+            )
         raise ValueError(f"Operator '{op}' is not supported for custom field '{field_id}'")
 
     # --- sprint ---
