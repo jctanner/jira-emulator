@@ -23,6 +23,7 @@ from jira_emulator.models.comment import Comment
 from jira_emulator.models.component import Component, IssueComponent
 from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue
 from jira_emulator.models.issue import Issue
+from jira_emulator.models.issue_property import IssueProperty
 from jira_emulator.models.issue_type import IssueType
 from jira_emulator.models.label import Label
 from jira_emulator.models.priority import Priority
@@ -218,6 +219,9 @@ class JQLTransformer:
             if node.data == "cf_field":
                 # cf[12345] → "cf[12345]"
                 return str(node.children[0]).strip()
+            if node.data == "property_field":
+                # Preserve original form: issue.property[key].path
+                return str(node.children[0]).strip()
         return str(node)
 
     def _extract_op(self, node) -> str:
@@ -301,6 +305,9 @@ class JQLTransformer:
     def _normalise_field(name: str) -> str:
         """Normalise a JQL field name to a canonical lowercase form."""
         return name.strip().lower()
+
+    # Regex for issue.property[key] or issue.property[key].sub.path
+    _PROPERTY_RE = re.compile(r"^issue\.property\[([^\]]+)\]((?:\.[a-zA-Z0-9_.]+)*)$", re.IGNORECASE)
 
     # ------------------------------------------------------------------
     # Field -> Column/Subquery mapping
@@ -397,6 +404,13 @@ class JQLTransformer:
         # --- sprint ---
         if field == "sprint":
             return self._build_sprint_clause(op, value)
+
+        # --- issue.property[key].path ---
+        prop_match = self._PROPERTY_RE.match(field)
+        if prop_match:
+            prop_key = prop_match.group(1)
+            json_path = prop_match.group(2) or ""
+            return self._build_issue_property_clause(op, value, prop_key, json_path)
 
         raise ValueError(f"Unsupported JQL field: '{field}'")
 
@@ -670,6 +684,50 @@ class JQLTransformer:
             return ~sprint_exists
         raise ValueError(f"Operator '{op}' is not supported for 'sprint' field")
 
+    # --- issue.property[key].path ---
+
+    def _build_issue_property_clause(self, op: str, value, prop_key: str, json_path: str):
+        if json_path:
+            json_expr = "$" + json_path
+        else:
+            json_expr = "$"
+
+        extracted = func.json_extract(IssueProperty.value, json_expr)
+
+        if op == "op_eq":
+            return exists(
+                select(IssueProperty.id).where(
+                    IssueProperty.issue_id == Issue.id,
+                    IssueProperty.key == prop_key,
+                    extracted == str(value),
+                )
+            )
+        if op == "op_ne":
+            return ~exists(
+                select(IssueProperty.id).where(
+                    IssueProperty.issue_id == Issue.id,
+                    IssueProperty.key == prop_key,
+                    extracted == str(value),
+                )
+            )
+        if op == "op_contains":
+            return exists(
+                select(IssueProperty.id).where(
+                    IssueProperty.issue_id == Issue.id,
+                    IssueProperty.key == prop_key,
+                    func.cast(extracted, func.TEXT).ilike(f"%{value}%"),
+                )
+            )
+        if op == "op_not_contains":
+            return ~exists(
+                select(IssueProperty.id).where(
+                    IssueProperty.issue_id == Issue.id,
+                    IssueProperty.key == prop_key,
+                    func.cast(extracted, func.TEXT).ilike(f"%{value}%"),
+                )
+            )
+        raise ValueError(f"Operator '{op}' is not supported for issue properties")
+
     # ------------------------------------------------------------------
     # IN / NOT IN
     # ------------------------------------------------------------------
@@ -782,6 +840,23 @@ class JQLTransformer:
         if field.startswith("customfield_"):
             return self._build_custom_field_in(field, values, negate)
 
+        # issue.property[key].path IN
+        prop_match = self._PROPERTY_RE.match(field)
+        if prop_match:
+            prop_key = prop_match.group(1)
+            json_path = prop_match.group(2) or ""
+            json_expr = "$" + json_path if json_path else "$"
+            extracted = func.json_extract(IssueProperty.value, json_expr)
+            lower_vals = [func.lower(str(v)) for v in values]
+            prop_exists = exists(
+                select(IssueProperty.id).where(
+                    IssueProperty.issue_id == Issue.id,
+                    IssueProperty.key == prop_key,
+                    func.lower(func.cast(extracted, func.TEXT)).in_(lower_vals),
+                )
+            )
+            return ~prop_exists if negate else prop_exists
+
         raise ValueError(f"Unsupported JQL field for IN operator: '{field}'")
 
     def _build_custom_field_in(self, field_id: str, values: list, negate: bool):
@@ -854,6 +929,18 @@ class JQLTransformer:
         # customfield_NNNNN IS EMPTY
         if field.startswith("customfield_"):
             return self._build_custom_field_is_empty(field, negate)
+
+        # issue.property[key] IS EMPTY
+        prop_match = self._PROPERTY_RE.match(field)
+        if prop_match:
+            prop_key = prop_match.group(1)
+            prop_exists = exists(
+                select(IssueProperty.id).where(
+                    IssueProperty.issue_id == Issue.id,
+                    IssueProperty.key == prop_key,
+                )
+            )
+            return prop_exists if negate else ~prop_exists
 
         raise ValueError(f"Unsupported JQL field for IS EMPTY: '{field}'")
 

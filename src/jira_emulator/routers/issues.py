@@ -114,6 +114,7 @@ async def get_issue(
         db,
         fields_filter=fields_filter,
         api_version=_get_api_version(request),
+        expand=expand,
     )
 
 

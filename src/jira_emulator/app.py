@@ -137,6 +137,7 @@ def create_app() -> FastAPI:
         attachments,
         auth,
         fields,
+        issue_properties,
         issues,
         links,
         metadata,
@@ -158,6 +159,7 @@ def create_app() -> FastAPI:
     app.include_router(tokens.router)
     app.include_router(links.router)
     app.include_router(remote_links.router)
+    app.include_router(issue_properties.router)
     app.include_router(admin.router)
 
     # Web UI router
