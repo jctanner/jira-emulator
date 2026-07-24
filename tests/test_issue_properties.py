@@ -1,7 +1,5 @@
 """Tests for Issue Properties CRUD, JQL, and expansion."""
 
-import json
-
 import pytest
 
 AUTH = {"Authorization": "Basic YWRtaW46YWRtaW4="}

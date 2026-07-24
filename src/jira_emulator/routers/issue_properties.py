@@ -45,12 +45,7 @@ async def get_issue_property_keys(
     props = list(result.scalars().all())
 
     base = f"{request.base_url}rest/api/2/issue/{issueIdOrKey}/properties"
-    return {
-        "keys": [
-            {"self": f"{base}/{p.key}", "key": p.key}
-            for p in props
-        ]
-    }
+    return {"keys": [{"self": f"{base}/{p.key}", "key": p.key} for p in props]}
 
 
 @router.get("/issue/{issueIdOrKey}/properties/{propertyKey}")
