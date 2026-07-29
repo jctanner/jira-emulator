@@ -54,6 +54,7 @@ class Issue(Base):
     history_entries: Mapped[list["IssueHistory"]] = relationship(back_populates="issue", cascade="all, delete-orphan")
     attachments: Mapped[list["Attachment"]] = relationship(back_populates="issue", cascade="all, delete-orphan")
     remote_links: Mapped[list["RemoteLink"]] = relationship(back_populates="issue", cascade="all, delete-orphan")
+    properties: Mapped[list["IssueProperty"]] = relationship(back_populates="issue", cascade="all, delete-orphan")
 
 
 class IssueSequence(Base):
@@ -71,6 +72,7 @@ from jira_emulator.models.comment import Comment  # noqa: E402, F401
 from jira_emulator.models.component import IssueComponent  # noqa: E402, F401
 from jira_emulator.models.custom_field import IssueCustomFieldValue  # noqa: E402, F401
 from jira_emulator.models.issue_history import IssueHistory  # noqa: E402, F401
+from jira_emulator.models.issue_property import IssueProperty  # noqa: E402, F401
 from jira_emulator.models.issue_type import IssueType  # noqa: E402, F401
 from jira_emulator.models.label import Label  # noqa: E402, F401
 from jira_emulator.models.link import IssueLink  # noqa: E402, F401

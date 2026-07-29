@@ -202,6 +202,53 @@ def transitionJiraIssue(
 
 
 # ---------------------------------------------------------------------------
+# Issue Property tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def getIssuePropertyKeys(issueIdOrKey: str) -> dict:
+    """Get the keys of all properties on a Jira issue.
+
+    Returns a PropertyKeys object with a keys array containing key and self URL.
+    """
+    return _request("GET", f"/rest/api/2/issue/{issueIdOrKey}/properties")
+
+
+@mcp.tool()
+def getIssueProperty(issueIdOrKey: str, propertyKey: str) -> dict:
+    """Get a single property value from a Jira issue.
+
+    Returns an EntityProperty with key and value fields.
+    """
+    return _request("GET", f"/rest/api/2/issue/{issueIdOrKey}/properties/{propertyKey}")
+
+
+@mcp.tool()
+def setIssueProperty(issueIdOrKey: str, propertyKey: str, value: dict | list | str | int | float | bool | None) -> dict:
+    """Set (create or update) a property on a Jira issue.
+
+    The value can be any valid JSON type. Returns 201 on create, 200 on update.
+    """
+    result = _request("PUT", f"/rest/api/2/issue/{issueIdOrKey}/properties/{propertyKey}", value)
+    if isinstance(result, dict) and result.get("error"):
+        return result
+    return {"status": 200, "message": f"Property '{propertyKey}' set on {issueIdOrKey}"}
+
+
+@mcp.tool()
+def deleteIssueProperty(issueIdOrKey: str, propertyKey: str) -> dict:
+    """Delete a property from a Jira issue.
+
+    Returns success status or error details.
+    """
+    result = _request("DELETE", f"/rest/api/2/issue/{issueIdOrKey}/properties/{propertyKey}")
+    if isinstance(result, dict) and result.get("error"):
+        return result
+    return {"status": 204, "message": f"Property '{propertyKey}' deleted from {issueIdOrKey}"}
+
+
+# ---------------------------------------------------------------------------
 # Multipart upload helper
 # ---------------------------------------------------------------------------
 

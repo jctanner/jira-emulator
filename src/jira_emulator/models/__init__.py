@@ -7,6 +7,7 @@ from jira_emulator.models.component import Component, IssueComponent  # noqa: F4
 from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue  # noqa: F401
 from jira_emulator.models.issue import Issue, IssueSequence  # noqa: F401
 from jira_emulator.models.issue_history import IssueHistory  # noqa: F401
+from jira_emulator.models.issue_property import IssueProperty  # noqa: F401
 from jira_emulator.models.issue_type import IssueType  # noqa: F401
 from jira_emulator.models.label import Label  # noqa: F401
 from jira_emulator.models.link import IssueLink, IssueLinkType  # noqa: F401

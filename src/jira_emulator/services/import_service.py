@@ -16,6 +16,7 @@ from jira_emulator.models.comment import Comment
 from jira_emulator.models.component import Component, IssueComponent
 from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue
 from jira_emulator.models.issue import Issue, IssueSequence
+from jira_emulator.models.issue_property import IssueProperty
 from jira_emulator.models.issue_type import IssueType
 from jira_emulator.models.label import Label
 from jira_emulator.models.link import IssueLink, IssueLinkType
@@ -600,7 +601,19 @@ async def import_issue(
         await db.flush()
 
         # ------------------------------------------------------------------
-        # 17. Epic link — defer to second pass
+        # 17. Properties
+        # ------------------------------------------------------------------
+        existing_props_stmt = select(IssueProperty).where(IssueProperty.issue_id == issue.id)
+        for prop in (await db.execute(existing_props_stmt)).scalars().all():
+            await db.delete(prop)
+        await db.flush()
+
+        for prop_key, prop_value in (issue_data.get("properties") or {}).items():
+            db.add(IssueProperty(issue_id=issue.id, key=prop_key, value=json.dumps(prop_value)))
+        await db.flush()
+
+        # ------------------------------------------------------------------
+        # 18. Epic link — defer to second pass
         # ------------------------------------------------------------------
         epic_link_key = issue_data.get("epic_link")
         if epic_link_key and epic_links is not None:

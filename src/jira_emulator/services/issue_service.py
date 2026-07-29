@@ -155,6 +155,7 @@ def _issue_load_options():
         selectinload(Issue.inward_links).selectinload(IssueLink.outward_issue),
         selectinload(Issue.history_entries).selectinload(IssueHistory.author),
         selectinload(Issue.attachments).selectinload(Attachment.author),
+        selectinload(Issue.properties),
     ]
 
 
@@ -956,6 +957,7 @@ async def format_issue_response(
     db: AsyncSession,
     fields_filter: list[str] | None = None,
     api_version: int = 2,
+    expand: str | None = None,
 ) -> dict:
     """Build the full Jira REST-style JSON response for a single issue.
 
@@ -1311,7 +1313,7 @@ async def format_issue_response(
         "histories": changelog_histories,
     }
 
-    return {
+    response = {
         "expand": "renderedFields,names,schema,operations,editmeta,changelog",
         "id": str(issue.id),
         "self": f"{base_url}/rest/api/2/issue/{issue.id}",
@@ -1319,3 +1321,18 @@ async def format_issue_response(
         "fields": all_fields,
         "changelog": changelog,
     }
+
+    expand_set = {e.strip().lower() for e in (expand or "").split(",")} if expand else set()
+    if "properties" in expand_set:
+        props = issue.properties if hasattr(issue, "properties") else []
+        response["properties"] = {
+            "keys": [
+                {
+                    "self": f"{base_url}/rest/api/2/issue/{issue.key}/properties/{p.key}",
+                    "key": p.key,
+                }
+                for p in props
+            ]
+        }
+
+    return response

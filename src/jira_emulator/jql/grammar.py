@@ -73,6 +73,7 @@ JQL_GRAMMAR = r"""
     // Field names
     // -------------------------------------------------------------------
     ?field: CF_FIELD               -> cf_field
+          | PROPERTY_FIELD         -> property_field
           | DOUBLE_QUOTED_STRING   -> quoted_field
           | FIELD_NAME             -> plain_field
 
@@ -123,6 +124,9 @@ JQL_GRAMMAR = r"""
     // Function name: identifier immediately followed by "("
     // The lookahead (?=\() ensures this only matches when a "(" follows
     FUNC_NAME: /[a-zA-Z_][a-zA-Z0-9_]*(?=\s*\()/
+
+    // Issue property references: issue.property[key] or issue.property[key].sub.path
+    PROPERTY_FIELD.3: /issue\.property\[[^\]]+\](\.[a-zA-Z0-9_.]+)*/
 
     // Field names: identifiers that may contain dots and underscores
     FIELD_NAME: /[a-zA-Z_][a-zA-Z0-9_.]*/
