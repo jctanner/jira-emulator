@@ -298,6 +298,10 @@ def _normalize_jira_api_issue(raw: dict) -> dict:
         if key.startswith("customfield_") and value is not None:
             flat[key] = value
 
+    # Preserve top-level properties (sibling to fields in raw API response)
+    if props := raw.get("properties"):
+        flat["properties"] = props
+
     return flat
 
 
