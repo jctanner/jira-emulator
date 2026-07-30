@@ -12,6 +12,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from jira_emulator.adf import serialize_adf
 from jira_emulator.models.comment import Comment
 from jira_emulator.models.component import Component, IssueComponent
 from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue
@@ -251,7 +252,7 @@ def _normalize_jira_api_issue(raw: dict) -> dict:
     flat: dict = {"key": raw.get("key", "")}
 
     flat["summary"] = fields.get("summary", "")
-    flat["description"] = fields.get("description")
+    flat["description"] = serialize_adf(fields.get("description"))
 
     flat["issue_type"] = _extract_name(fields.get("issuetype")) or "Task"
     flat["status"] = _extract_name(fields.get("status")) or "New"
@@ -398,7 +399,7 @@ async def import_issue(
         if existing_issue:
             # UPDATE path
             existing_issue.summary = issue_data.get("summary", existing_issue.summary)
-            existing_issue.description = issue_data.get("description")
+            existing_issue.description = serialize_adf(issue_data.get("description"))
             existing_issue.project_id = project.id
             existing_issue.issue_type_id = issue_type.id
             existing_issue.status_id = status.id
@@ -418,7 +419,7 @@ async def import_issue(
                 project_id=project.id,
                 issue_type_id=issue_type.id,
                 summary=issue_data.get("summary", ""),
-                description=issue_data.get("description"),
+                description=serialize_adf(issue_data.get("description")),
                 status_id=status.id,
                 priority_id=priority.id if priority else None,
                 assignee_id=assignee.id if assignee else None,
@@ -582,7 +583,7 @@ async def import_issue(
         # 16. Comments (from Jira REST API format)
         # ------------------------------------------------------------------
         for comment_data in issue_data.get("_comments") or []:
-            body = comment_data.get("body", "")
+            body = serialize_adf(comment_data.get("body"))
             if not body:
                 continue
             author_obj = comment_data.get("author")
