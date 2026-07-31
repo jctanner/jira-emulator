@@ -297,11 +297,19 @@ async def issue_detail(request: Request, key: str, db: AsyncSession = Depends(ge
         (await db.execute(select(User).where(User.active.is_(True)).order_by(User.display_name))).scalars().all()
     )
 
+    import json as _json
+
+    properties = [
+        {"key": p.key, "value": _json.loads(p.value)}
+        for p in (issue.properties if hasattr(issue, "properties") else [])
+    ]
+
     return templates.TemplateResponse(
         request=request,
         name="issue_detail.html",
         context={
             "issue": formatted,
+            "properties": properties,
             "projects": all_projects,
             "issue_types": all_types,
             "priorities": all_priorities,
