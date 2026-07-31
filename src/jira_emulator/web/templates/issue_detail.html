@@ -39,6 +39,29 @@
             {% endif %}
         </div>
 
+        <!-- Properties -->
+        {% if properties %}
+        <div class="card">
+            <h3 class="section-heading" style="margin-top: 0;">Properties ({{ properties | length }})</h3>
+            <details>
+                <summary>Show / Hide</summary>
+                <table class="link-table">
+                    <thead>
+                        <tr><th>Key</th><th>Value</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for prop in properties %}
+                        <tr>
+                            <td><code>{{ prop.key }}</code></td>
+                            <td><code>{{ prop.value | tojson }}</code></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </details>
+        </div>
+        {% endif %}
+
         <!-- Issue Links -->
         {% set links = issue.fields.issuelinks | default([]) %}
         {% if links %}
