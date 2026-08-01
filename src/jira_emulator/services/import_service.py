@@ -384,12 +384,14 @@ async def _import_field_metadata(db: AsyncSession, field_defs: list[dict]) -> in
             if description is not None:
                 existing.description = description
         else:
-            db.add(CustomField(
-                field_id=field_id,
-                name=name,
-                field_type=field_type,
-                description=description,
-            ))
+            db.add(
+                CustomField(
+                    field_id=field_id,
+                    name=name,
+                    field_type=field_type,
+                    description=description,
+                )
+            )
         count += 1
 
     await db.flush()
