@@ -51,6 +51,18 @@ CUSTOM_FIELD_MAP: dict[str, tuple[str, str]] = {
 # Result dataclass
 # ---------------------------------------------------------------------------
 @dataclass
+class ExportData:
+    """Normalized container for data extracted from a Jira export file."""
+
+    issues: list[dict] = field(default_factory=list)
+    fields: list[dict] = field(default_factory=list)
+
+    def merge(self, other: "ExportData") -> None:
+        self.issues.extend(other.issues)
+        self.fields.extend(other.fields)
+
+
+@dataclass
 class ImportResult:
     """Tracks statistics and errors produced by an import run."""
 
@@ -306,23 +318,82 @@ def _normalize_jira_api_issue(raw: dict) -> dict:
     return flat
 
 
-def _unwrap_export_envelope(data: dict | list) -> list[dict]:
-    """Unwrap a Jira export envelope if present.
+def _unwrap_export_envelope(data: dict | list) -> ExportData:
+    """Unwrap a Jira export envelope into an ``ExportData`` container.
 
     Handles:
+    - ``{"issues": [...], "fields": [...]}`` (full export)
     - ``{"metadata": {...}, "issues": [...]}`` (export script output)
     - ``{"issues": [...]}`` (bare issues wrapper)
     - ``[...]`` (plain list of issues)
     - ``{...}`` (single issue dict without "issues" key)
     """
     if isinstance(data, list):
-        return data
+        return ExportData(issues=data)
     if isinstance(data, dict):
         issues = data.get("issues")
         if isinstance(issues, list):
-            return issues
-        return [data]
-    return []
+            fields = data.get("fields") or []
+            return ExportData(issues=issues, fields=fields)
+        return ExportData(issues=[data])
+    return ExportData()
+
+
+# ---------------------------------------------------------------------------
+# Jira schema type -> emulator field type
+# ---------------------------------------------------------------------------
+_JIRA_TYPE_MAP: dict[str, str] = {
+    "string": "string",
+    "number": "number",
+    "date": "date",
+    "datetime": "datetime",
+    "option": "select",
+    "array": "multiselect",
+    "user": "user",
+    "any": "string",
+}
+
+
+async def _import_field_metadata(db: AsyncSession, field_defs: list[dict]) -> int:
+    """Import field definitions, creating or updating CustomField records.
+
+    Only custom fields (``custom == True``) are processed.  Returns the
+    number of fields created or updated.
+    """
+    count = 0
+    for field_def in field_defs:
+        if not field_def.get("custom"):
+            continue
+
+        field_id = field_def.get("id", "")
+        if not field_id:
+            continue
+
+        name = field_def.get("name") or field_id
+        description = field_def.get("description")
+        schema = field_def.get("schema") or {}
+        jira_type = schema.get("type", "string")
+        field_type = _JIRA_TYPE_MAP.get(jira_type, "string")
+
+        stmt = select(CustomField).where(CustomField.field_id == field_id)
+        existing = (await db.execute(stmt)).scalar_one_or_none()
+
+        if existing:
+            existing.name = name
+            existing.field_type = field_type
+            if description is not None:
+                existing.description = description
+        else:
+            db.add(CustomField(
+                field_id=field_id,
+                name=name,
+                field_type=field_type,
+                description=description,
+            ))
+        count += 1
+
+    await db.flush()
+    return count
 
 
 # ---------------------------------------------------------------------------
@@ -553,15 +624,25 @@ async def import_issue(
 
             cf = await _get_or_create_custom_field(db, raw_key, raw_key, inferred_type)
             cfv = IssueCustomFieldValue(issue_id=issue.id, custom_field_id=cf.id)
-            if inferred_type == "number":
+            # Use the field's stored type (which may have been set by field
+            # metadata import) to decide the storage column, so that the
+            # response serializer reads from the correct column.
+            store_type = cf.field_type
+            if store_type == "number":
                 try:
                     cfv.value_number = float(raw_value)
                 except (TypeError, ValueError):
                     cfv.value_string = str(raw_value)
-            elif inferred_type == "multiselect":
-                cfv.value_json = json.dumps(raw_value)
+            elif store_type in ("select", "multiselect"):
+                if isinstance(raw_value, (dict, list)):
+                    cfv.value_json = json.dumps(raw_value)
+                else:
+                    cfv.value_string = str(raw_value)
             else:
-                cfv.value_string = str(raw_value)
+                if isinstance(raw_value, (dict, list)):
+                    cfv.value_string = json.dumps(raw_value)
+                else:
+                    cfv.value_string = str(raw_value)
             db.add(cfv)
 
         await db.flush()
@@ -742,18 +823,28 @@ async def _resolve_issue_links(db: AsyncSession, deferred_links: list[dict]) -> 
 # ---------------------------------------------------------------------------
 # Batch import entry point
 # ---------------------------------------------------------------------------
-async def import_issues(db: AsyncSession, issues: list[dict]) -> ImportResult:
-    """Import a list of issue dicts (first pass + epic resolution + sequences).
+async def import_issues(db: AsyncSession, data: ExportData | list[dict]) -> ImportResult:
+    """Import export data (field metadata + issues + link resolution).
 
-    This is the main entry point for programmatic imports.  Accepts both the
-    flat import format and raw Jira REST API format (with nested ``fields``).
+    This is the main entry point for programmatic imports.  Accepts an
+    ``ExportData`` container or a plain list of issue dicts for backwards
+    compatibility.
     """
+    if isinstance(data, list):
+        data = ExportData(issues=data)
+
     result = ImportResult()
     epic_links: dict[str, str] = {}
     deferred_links: list[dict] = []
 
+    # Phase 0: import field metadata (before issues so CustomField records
+    # are pre-populated with correct names and types)
+    if data.fields:
+        field_count = await _import_field_metadata(db, data.fields)
+        logger.info("Imported %d field definitions", field_count)
+
     # Normalize issues (handles Jira REST API format)
-    normalized = [_normalize_jira_api_issue(issue) for issue in issues]
+    normalized = [_normalize_jira_api_issue(issue) for issue in data.issues]
 
     # First pass: import every issue
     for issue_data in normalized:
@@ -823,47 +914,48 @@ async def import_issues(db: AsyncSession, issues: list[dict]) -> ImportResult:
 # File / directory helpers
 # ---------------------------------------------------------------------------
 async def import_file(db: AsyncSession, path: str) -> ImportResult:
-    """Read a JSON file and import the issues it contains.
+    """Read a JSON file and import its contents.
 
     The file may be a JSON array of issue dicts, a single issue dict, or a
-    Jira export envelope (``{"metadata": ..., "issues": [...]}``)
+    Jira export envelope (``{"issues": [...], "fields": [...]}``)
     """
     file_path = Path(path)
     logger.info("Importing from file: %s", file_path)
     with open(file_path, encoding="utf-8") as fh:
         data = json.load(fh)
 
-    issues = _unwrap_export_envelope(data)
-    if not issues and not isinstance(data, (list, dict)):
+    export_data = _unwrap_export_envelope(data)
+    if not export_data.issues and not isinstance(data, (list, dict)):
         result = ImportResult()
         result.errors.append(f"{path}: unexpected JSON root type {type(data).__name__}")
         return result
-    return await import_issues(db, issues)
+    return await import_issues(db, export_data)
 
 
 async def import_directory(db: AsyncSession, dir_path: str) -> ImportResult:
-    """Scan a directory for ``*.json`` files, combine all issues, and import.
+    """Scan a directory for ``*.json`` files, combine all data, and import.
 
-    All issue dicts from every file are collected into a single list before
-    importing so that cross-file epic links can be resolved in one pass.
+    All data from every file is collected into a single ``ExportData``
+    before importing so that cross-file epic links can be resolved in one
+    pass.
     """
     directory = Path(dir_path)
     logger.info("Scanning directory for JSON files: %s", directory)
 
-    all_issues: list[dict] = []
+    combined = ExportData()
     errors: list[str] = []
 
     for json_file in sorted(directory.glob("*.json")):
         try:
             with open(json_file, encoding="utf-8") as fh:
                 data = json.load(fh)
-            all_issues.extend(_unwrap_export_envelope(data))
+            combined.merge(_unwrap_export_envelope(data))
         except Exception as exc:
             errors.append(f"{json_file}: {exc}")
 
-    logger.info("Collected %d issues from %s", len(all_issues), directory)
+    logger.info("Collected %d issues from %s", len(combined.issues), directory)
 
-    result = await import_issues(db, all_issues)
+    result = await import_issues(db, combined)
     result.errors.extend(errors)
     return result
 
@@ -882,7 +974,7 @@ async def import_archive(db: AsyncSession, archive_path: str) -> ImportResult:
     archive_file = Path(archive_path)
     logger.info("Importing from archive: %s", archive_file)
 
-    all_issues: list[dict] = []
+    combined = ExportData()
     errors: list[str] = []
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -911,17 +1003,17 @@ async def import_archive(db: AsyncSession, archive_path: str) -> ImportResult:
         json_files = _find_json_files_recursive(temp_path)
         logger.info("Found %d JSON files in archive", len(json_files))
 
-        # Load and collect all issues
+        # Load and collect all data
         for json_file in json_files:
             try:
                 with open(json_file, encoding="utf-8") as fh:
                     data = json.load(fh)
-                all_issues.extend(_unwrap_export_envelope(data))
+                combined.merge(_unwrap_export_envelope(data))
             except Exception as exc:
                 errors.append(f"{json_file.name}: {exc}")
 
-    logger.info("Collected %d issues from archive %s", len(all_issues), archive_file)
+    logger.info("Collected %d issues from archive %s", len(combined.issues), archive_file)
 
-    result = await import_issues(db, all_issues)
+    result = await import_issues(db, combined)
     result.errors.extend(errors)
     return result
