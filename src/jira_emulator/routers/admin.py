@@ -110,14 +110,14 @@ async def import_file_upload(
 
         from jira_emulator.services.import_service import _unwrap_export_envelope
 
-        issues = _unwrap_export_envelope(data)
-        if not issues and not isinstance(data, (list, dict)):
+        export_data = _unwrap_export_envelope(data)
+        if not export_data.issues and not isinstance(data, (list, dict)):
             raise HTTPException(
                 status_code=400,
                 detail=f"Expected a JSON array or object, got {type(data).__name__}",
             )
 
-        result = await import_issues(db, issues)
+        result = await import_issues(db, export_data)
 
     return ImportResponse(
         imported=result.imported,

@@ -493,11 +493,11 @@ async def admin_import_upload(
             content = await file.read()
             data = json.loads(content)
 
-            issues = _unwrap_export_envelope(data)
-            if not issues and not isinstance(data, (list, dict)):
+            export_data = _unwrap_export_envelope(data)
+            if not export_data.issues and not isinstance(data, (list, dict)):
                 raise ValueError(f"Expected a JSON array or object, got {type(data).__name__}")
 
-            result = await import_issues(db, issues)
+            result = await import_issues(db, export_data)
 
         return templates.TemplateResponse(
             request=request,
