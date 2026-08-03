@@ -127,12 +127,15 @@ async def _get_or_create_issue_type(db: AsyncSession, name: str) -> IssueType:
     return it
 
 
-async def _get_or_create_status(db: AsyncSession, name: str) -> Status:
+async def _get_or_create_status(db: AsyncSession, name: str, category: str = "indeterminate") -> Status:
     stmt = select(Status).where(Status.name == name)
     row = (await db.execute(stmt)).scalar_one_or_none()
     if row:
+        if category and row.category != category:
+            row.category = category
+            await db.flush()
         return row
-    s = Status(name=name, category="indeterminate")
+    s = Status(name=name, category=category)
     db.add(s)
     await db.flush()
     return s
@@ -268,6 +271,11 @@ def _normalize_jira_api_issue(raw: dict) -> dict:
 
     flat["issue_type"] = _extract_name(fields.get("issuetype")) or "Task"
     flat["status"] = _extract_name(fields.get("status")) or "New"
+    status_obj = fields.get("status")
+    if isinstance(status_obj, dict):
+        status_cat = status_obj.get("statusCategory")
+        if isinstance(status_cat, dict):
+            flat["status_category"] = status_cat.get("key")
     flat["priority"] = _extract_name(fields.get("priority"))
     flat["assignee"] = _extract_display_name(fields.get("assignee"))
     flat["reporter"] = _extract_display_name(fields.get("reporter"))
@@ -427,7 +435,8 @@ async def import_issue(
 
         # 3. Auto-create status
         status_name = issue_data.get("status") or "New"
-        status = await _get_or_create_status(db, status_name)
+        status_category = issue_data.get("status_category") or "indeterminate"
+        status = await _get_or_create_status(db, status_name, status_category)
 
         # 4. Auto-create priority
         priority = None
