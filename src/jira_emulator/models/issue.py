@@ -35,7 +35,8 @@ class Issue(Base):
     resolution: Mapped["Resolution | None"] = relationship()
     assignee: Mapped["User | None"] = relationship(foreign_keys=[assignee_id])
     reporter: Mapped["User | None"] = relationship(foreign_keys=[reporter_id])
-    parent: Mapped["Issue | None"] = relationship(remote_side=[id], foreign_keys=[parent_id])
+    parent: Mapped["Issue | None"] = relationship(remote_side=[id], foreign_keys=[parent_id], back_populates="children")
+    children: Mapped[list["Issue"]] = relationship(foreign_keys=[parent_id], back_populates="parent")
 
     labels: Mapped[list["Label"]] = relationship(back_populates="issue", cascade="all, delete-orphan")
     comments: Mapped[list["Comment"]] = relationship(back_populates="issue", cascade="all, delete-orphan")

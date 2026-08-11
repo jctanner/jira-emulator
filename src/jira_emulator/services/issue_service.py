@@ -141,7 +141,10 @@ def _issue_load_options():
         selectinload(Issue.assignee),
         selectinload(Issue.reporter),
         selectinload(Issue.resolution),
-        selectinload(Issue.parent),
+        selectinload(Issue.parent).selectinload(Issue.issue_type),
+        selectinload(Issue.children).selectinload(Issue.status),
+        selectinload(Issue.children).selectinload(Issue.priority),
+        selectinload(Issue.children).selectinload(Issue.issue_type),
         selectinload(Issue.labels),
         selectinload(Issue.comments).selectinload(Comment.author),
         selectinload(Issue.component_associations).selectinload(IssueComponent.component),
@@ -1146,7 +1149,7 @@ async def format_issue_response(
                 "issuetype": {
                     "self": f"{base_url}/rest/api/2/issuetype/{issue.parent.issue_type_id}",
                     "id": str(issue.parent.issue_type_id),
-                    "name": "",
+                    "name": issue.parent.issue_type.name if issue.parent.issue_type else "",
                     "subtask": False,
                 },
             },
@@ -1179,6 +1182,45 @@ async def format_issue_response(
         else:
             custom_fields_dict[cf.field_id] = cfv.value_string
 
+    # -- subtasks / children --
+    subtasks_list = []
+    if hasattr(issue, "children") and issue.children:
+        for child in issue.children:
+            child_type = {
+                "self": f"{base_url}/rest/api/2/issuetype/{child.issue_type_id}",
+                "id": str(child.issue_type_id),
+                "name": child.issue_type.name if child.issue_type else "",
+                "subtask": True,
+            }
+            child_status = None
+            if child.status:
+                child_status = {
+                    "self": f"{base_url}/rest/api/2/status/{child.status.id}",
+                    "name": child.status.name,
+                    "id": str(child.status.id),
+                    "statusCategory": _status_category_for(child.status.category),
+                }
+            child_priority = None
+            if child.priority:
+                child_priority = {
+                    "self": f"{base_url}/rest/api/2/priority/{child.priority.id}",
+                    "id": str(child.priority.id),
+                    "name": child.priority.name,
+                }
+            subtasks_list.append(
+                {
+                    "id": str(child.id),
+                    "key": child.key,
+                    "self": f"{base_url}/rest/api/2/issue/{child.id}",
+                    "fields": {
+                        "summary": child.summary,
+                        "issuetype": child_type,
+                        "status": child_status,
+                        "priority": child_priority,
+                    },
+                }
+            )
+
     # -- due date --
     due_date_str = str(issue.due_date) if issue.due_date else None
 
@@ -1210,7 +1252,7 @@ async def format_issue_response(
             "watchCount": watcher_count,
             "isWatching": False,
         },
-        "subtasks": [],
+        "subtasks": subtasks_list,
         "attachment": _format_attachments(issue, base_url),
         "worklog": {"startAt": 0, "maxResults": 20, "total": 0, "worklogs": []},
         "timetracking": {},
