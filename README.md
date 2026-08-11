@@ -42,7 +42,7 @@ make run
 make run CONTAINER_ENGINE=docker
 
 # Use a different port
-make run PORT=9090
+make run JIRA_EMU_PORT=9090
 
 # View logs
 make logs
