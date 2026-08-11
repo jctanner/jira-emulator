@@ -10,10 +10,10 @@
     {{ issue.key }}
 </div>
 
-{% if issue.fields.parent %}
-<div class="breadcrumb">
-    Parent: <a href="/issue/{{ issue.fields.parent.key }}">{{ issue.fields.parent.key }}</a>
-    &mdash; {{ issue.fields.parent.fields.summary | default('') }}
+{% set subtasks = issue.fields.subtasks | default([]) %}
+{% if subtasks %}
+<div class="breadcrumb" style="color: var(--ds-text-subtlest);">
+    {{ subtasks | length }} child issue{{ 's' if subtasks | length != 1 else '' }}
 </div>
 {% endif %}
 
@@ -38,6 +38,71 @@
             <p style="color: var(--ds-text-subtlest); font-style: italic;">No description provided.</p>
             {% endif %}
         </div>
+
+        <!-- Parent Card -->
+        {% if issue.fields.parent %}
+        <div class="card">
+            <h3 class="section-heading" style="margin-top: 0;">Parent</h3>
+            <table class="link-table">
+                <thead>
+                    <tr>
+                        <th>Key</th>
+                        <th>Summary</th>
+                        <th>Type</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><a class="issue-key-link" href="/issue/{{ issue.fields.parent.key }}">{{ issue.fields.parent.key }}</a></td>
+                        <td>{{ issue.fields.parent.fields.summary | default('') }}</td>
+                        <td>{{ issue.fields.parent.fields.issuetype.name | default('') }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <!-- Child Issues -->
+        {% set subtasks = issue.fields.subtasks | default([]) %}
+        {% if subtasks %}
+        <div class="card">
+            <h3 class="section-heading" style="margin-top: 0;">Child Issues ({{ subtasks | length }})</h3>
+            <details open>
+                <summary>Show / Hide</summary>
+                <table class="link-table">
+                    <thead>
+                        <tr>
+                            <th>Key</th>
+                            <th>Summary</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Priority</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for child in subtasks %}
+                        <tr>
+                            <td><a class="issue-key-link" href="/issue/{{ child.key }}">{{ child.key }}</a></td>
+                            <td>{{ child.fields.summary | default('') }}</td>
+                            <td>{{ child.fields.issuetype.name | default('') if child.fields.issuetype else '' }}</td>
+                            <td>
+                                {% if child.fields.status %}
+                                    {% set cat = child.fields.status.statusCategory.key | default('new') %}
+                                    <span class="lozenge {% if cat == 'done' %}lozenge-done{% elif cat == 'indeterminate' %}lozenge-inprogress{% else %}lozenge-new{% endif %}">
+                                        {{ child.fields.status.name }}
+                                    </span>
+                                {% else %}
+                                &mdash;
+                                {% endif %}
+                            </td>
+                            <td>{{ child.fields.priority.name | default('') if child.fields.priority else '&mdash;' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </details>
+        </div>
+        {% endif %}
 
         <!-- Properties -->
         {% if properties %}
@@ -276,6 +341,16 @@
                 {% endif %}
             </div>
         </div>
+
+        {% if issue.fields.parent %}
+        <div class="field-group">
+            <div class="field-label">Parent</div>
+            <div class="field-value">
+                <a class="issue-key-link" href="/issue/{{ issue.fields.parent.key }}">{{ issue.fields.parent.key }}</a>
+                {{ issue.fields.parent.fields.summary | default('') }}
+            </div>
+        </div>
+        {% endif %}
 
         <div class="field-group">
             <div class="field-label">Labels</div>
