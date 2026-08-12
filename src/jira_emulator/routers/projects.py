@@ -11,6 +11,7 @@ from jira_emulator.database import get_db
 from jira_emulator.models.component import Component, IssueComponent
 from jira_emulator.models.project import Project
 from jira_emulator.models.user import User
+from jira_emulator.models.version import Version
 from jira_emulator.services import project_service
 
 router = APIRouter(prefix="/rest/api/2")
@@ -40,6 +41,18 @@ def _component_json(component: Component, base_url: str, issue_count: int | None
 
 def _component_sort_key(component: Component) -> tuple[str, str]:
     return (component.name.casefold(), component.name)
+
+
+def _version_json(version: Version, base_url: str) -> dict:
+    return {
+        "self": f"{base_url}/rest/api/2/version/{version.id}",
+        "id": str(version.id),
+        "name": version.name,
+        "description": version.description or "",
+        "released": version.released,
+        "releaseDate": str(version.release_date) if version.release_date else None,
+        "project": version.project_id,
+    }
 
 
 def _parse_component_id(component_id: str) -> int:
@@ -299,6 +312,41 @@ async def create_component(
     await db.commit()
 
     return _component_json(component, get_settings().BASE_URL)
+
+
+@router.post("/version", status_code=201)
+async def create_version(
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a project version, idempotently, for REST-backed environment seeding."""
+    name = body.get("name")
+    project_data = body.get("project")
+    project_id_or_key = body.get("projectId")
+    if isinstance(project_data, dict):
+        project_id_or_key = project_data.get("key") or project_data.get("id") or project_id_or_key
+    elif isinstance(project_data, (str, int)):
+        project_id_or_key = project_data
+    if not isinstance(name, str) or not name.strip():
+        raise HTTPException(status_code=400, detail=_jira_error(["Version name is required."]))
+    if project_id_or_key is None:
+        raise HTTPException(status_code=400, detail=_jira_error(["Version project is required."]))
+
+    project = await _project_or_404(db, str(project_id_or_key))
+    existing = (
+        await db.execute(select(Version).where(Version.project_id == project.id, Version.name == name.strip()))
+    ).scalar_one_or_none()
+    if existing is None:
+        existing = Version(
+            project_id=project.id,
+            name=name.strip(),
+            description=body.get("description") if isinstance(body.get("description"), str) else None,
+            released=bool(body.get("released", False)),
+        )
+        db.add(existing)
+        await db.flush()
+    return _version_json(existing, get_settings().BASE_URL)
 
 
 @router.get("/component/{component_id}/relatedIssueCounts")

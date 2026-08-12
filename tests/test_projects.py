@@ -51,3 +51,18 @@ async def test_get_project_not_found(client: httpx.AsyncClient):
     """GET /rest/api/2/project/NONEXIST should return 404."""
     resp = await client.get("/rest/api/2/project/NONEXIST", headers=AUTH_HEADER)
     assert resp.status_code == 404
+
+
+async def test_create_project_version_v2_and_v3(client: httpx.AsyncClient):
+    """Project versions can be seeded idempotently through both REST surfaces."""
+    body = {"project": {"key": "RHAIRFE"}, "name": "rhoai-3.6.EA1"}
+    v2 = await client.post("/rest/api/2/version", headers=AUTH_HEADER, json=body)
+    assert v2.status_code == 201
+    assert v2.json()["name"] == "rhoai-3.6.EA1"
+
+    v3 = await client.post("/rest/api/3/version", headers=AUTH_HEADER, json=body)
+    assert v3.status_code == 201
+    assert v3.json()["id"] == v2.json()["id"]
+
+    project = await client.get("/rest/api/2/project/RHAIRFE", headers=AUTH_HEADER)
+    assert [version["name"] for version in project.json()["versions"]] == ["rhoai-3.6.EA1"]
