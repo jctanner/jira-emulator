@@ -105,6 +105,7 @@ CUSTOM_FIELDS = [
     {"field_id": "customfield_12310170", "name": "Affects Testing", "field_type": "multiselect"},
     {"field_id": "customfield_12319743", "name": "Release Blocker", "field_type": "select"},
     {"field_id": "customfield_12316142", "name": "Severity", "field_type": "select"},
+    {"field_id": "customfield_10665", "name": "Product Documentation Required", "field_type": "select"},
 ]
 
 # Workflow definitions: name -> list of (from_status_name | None, transition_name, to_status_name)
@@ -165,6 +166,11 @@ async def is_db_seeded(db: AsyncSession) -> bool:
 async def load_seed_data(db: AsyncSession, admin_password: str = "admin") -> None:
     """Populate the database with initial reference data."""
     if await is_db_seeded(db):
+        existing_fields = {field_id for field_id in (await db.execute(select(CustomField.field_id))).scalars().all()}
+        for cf_data in CUSTOM_FIELDS:
+            if cf_data["field_id"] not in existing_fields:
+                db.add(CustomField(**cf_data))
+        await db.commit()
         logger.info("Database already seeded, skipping")
         return
 
