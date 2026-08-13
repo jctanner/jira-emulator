@@ -1,5 +1,6 @@
 """Issue CRUD endpoints and comments: /rest/api/2/issue/..."""
 
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -22,6 +23,8 @@ from jira_emulator.schemas.issue import (
 from jira_emulator.services import history_service, issue_service
 from jira_emulator.services.issue_service import _format_rich_field
 from jira_emulator.services.user_service import get_or_create_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/rest/api/2")
 
@@ -207,18 +210,19 @@ async def list_comments(
     api_version = _get_api_version(request)
     comment_dicts = []
     for c in comments:
-        comment_dicts.append(
-            {
-                "self": f"{base_url}/rest/api/2/issue/{issue.id}/comment/{c.id}",
-                "id": str(c.id),
-                "author": _format_user(c.author, base_url),
-                "updateAuthor": _format_user(c.author, base_url),
-                "body": _format_rich_field(c.body, api_version),
-                "created": _format_datetime(c.created_at),
-                "updated": _format_datetime(c.updated_at),
-                "visibility": ({"type": c.visibility_type, "value": c.visibility_value} if c.visibility_type else None),
-            }
-        )
+        d = {
+            "self": f"{base_url}/rest/api/2/issue/{issue.id}/comment/{c.id}",
+            "id": str(c.id),
+            "author": _format_user(c.author, base_url),
+            "updateAuthor": _format_user(c.author, base_url),
+            "body": _format_rich_field(c.body, api_version),
+            "created": _format_datetime(c.created_at),
+            "updated": _format_datetime(c.updated_at),
+            "visibility": ({"type": c.visibility_type, "value": c.visibility_value} if c.visibility_type else None),
+        }
+        if c.parent_id is not None:
+            d["parentId"] = c.parent_id
+        comment_dicts.append(d)
 
     return {
         "startAt": startAt,
@@ -256,10 +260,35 @@ async def add_comment(
 
     stored_body = serialize_adf(body.body) or ""
 
+    parent_id = None
+    if body.parentId is not None:
+        parent_comment = await db.execute(
+            select(Comment).where(Comment.id == body.parentId, Comment.issue_id == issue.id)
+        )
+        parent = parent_comment.scalar_one_or_none()
+        if parent is None:
+            raise HTTPException(
+                status_code=400,
+                detail=_jira_error([f"Parent comment {body.parentId} not found on this issue."]),
+            )
+        # Jira threading is single-level only. If the caller replies to a
+        # child comment, resolve up to the thread root so all replies in
+        # a thread share the same parentId.
+        if parent.parent_id is not None:
+            logger.info(
+                "Resolving parentId %d to thread root %d (single-level threading)",
+                body.parentId,
+                parent.parent_id,
+            )
+            parent_id = parent.parent_id
+        else:
+            parent_id = parent.id
+
     now = datetime.utcnow()
     comment = Comment(
         issue_id=issue.id,
         author_id=author.id,
+        parent_id=parent_id,
         body=stored_body,
         visibility_type=body.visibility.get("type") if body.visibility else None,
         visibility_value=body.visibility.get("value") if body.visibility else None,
@@ -281,7 +310,7 @@ async def add_comment(
     )
 
     api_version = _get_api_version(request)
-    return {
+    resp = {
         "self": f"{base_url}/rest/api/2/issue/{issue.id}/comment/{comment.id}",
         "id": str(comment.id),
         "author": _format_user(author, base_url),
@@ -290,6 +319,9 @@ async def add_comment(
         "created": _format_datetime(comment.created_at),
         "updated": _format_datetime(comment.updated_at),
     }
+    if comment.parent_id is not None:
+        resp["parentId"] = comment.parent_id
+    return resp
 
 
 # ---------------------------------------------------------------------------

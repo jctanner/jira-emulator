@@ -1060,18 +1060,19 @@ async def format_issue_response(
     # -- comments --
     comment_list = []
     for c in issue.comments:
-        comment_list.append(
-            {
-                "self": f"{base_url}/rest/api/2/issue/{issue.id}/comment/{c.id}",
-                "id": str(c.id),
-                "author": _format_user(c.author, base_url),
-                "body": _format_rich_field(c.body, api_version),
-                "updateAuthor": _format_user(c.author, base_url),
-                "created": _format_datetime(c.created_at),
-                "updated": _format_datetime(c.updated_at),
-                "visibility": ({"type": c.visibility_type, "value": c.visibility_value} if c.visibility_type else None),
-            }
-        )
+        cd = {
+            "self": f"{base_url}/rest/api/2/issue/{issue.id}/comment/{c.id}",
+            "id": str(c.id),
+            "author": _format_user(c.author, base_url),
+            "body": _format_rich_field(c.body, api_version),
+            "updateAuthor": _format_user(c.author, base_url),
+            "created": _format_datetime(c.created_at),
+            "updated": _format_datetime(c.updated_at),
+            "visibility": ({"type": c.visibility_type, "value": c.visibility_value} if c.visibility_type else None),
+        }
+        if c.parent_id is not None:
+            cd["parentId"] = c.parent_id
+        comment_list.append(cd)
 
     comment_section = {
         "comments": comment_list,

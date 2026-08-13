@@ -674,6 +674,7 @@ async def import_issue(
         # ------------------------------------------------------------------
         # 16. Comments (from Jira REST API format)
         # ------------------------------------------------------------------
+        comment_id_map: dict[str, int] = {}
         for comment_data in issue_data.get("_comments") or []:
             body = serialize_adf(comment_data.get("body"))
             if not body:
@@ -686,15 +687,23 @@ async def import_issue(
                     author = await _get_or_create_user_from_display(db, display, result)
             comment_created = _parse_datetime(comment_data.get("created")) or datetime.utcnow()
             comment_updated = _parse_datetime(comment_data.get("updated")) or comment_created
-            db.add(
-                Comment(
-                    issue_id=issue.id,
-                    author_id=author.id if author else None,
-                    body=body,
-                    created_at=comment_created,
-                    updated_at=comment_updated,
-                )
+            parent_id = None
+            raw_parent = comment_data.get("parentId")
+            if raw_parent is not None:
+                parent_id = comment_id_map.get(str(raw_parent))
+            comment = Comment(
+                issue_id=issue.id,
+                author_id=author.id if author else None,
+                parent_id=parent_id,
+                body=body,
+                created_at=comment_created,
+                updated_at=comment_updated,
             )
+            db.add(comment)
+            await db.flush()
+            orig_id = comment_data.get("id")
+            if orig_id is not None:
+                comment_id_map[str(orig_id)] = comment.id
         await db.flush()
 
         # ------------------------------------------------------------------

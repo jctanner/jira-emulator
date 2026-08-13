@@ -10,6 +10,7 @@ class CreateCommentRequest(BaseModel):
 
     body: str | dict
     visibility: dict | None = None
+    parentId: int | None = None
 
 
 class CommentResponse(BaseModel):

@@ -412,3 +412,180 @@ async def test_comment_adf_via_v3(client: httpx.AsyncClient):
     v2_body = resp.json()["comments"][0]["body"]
     assert isinstance(v2_body, str)
     assert v2_body == "ADF comment"
+
+
+# ---------------------------------------------------------------------------
+# Threaded / nested comments
+# ---------------------------------------------------------------------------
+
+
+async def test_threaded_comment_create(client: httpx.AsyncClient):
+    """POST with parentId should create a child comment."""
+    created = await _create_issue(client)
+    key = created["key"]
+
+    # Create a top-level comment
+    parent_resp = await client.post(
+        f"/rest/api/2/issue/{key}/comment",
+        json={"body": "Top-level comment"},
+        headers=AUTH_HEADER,
+    )
+    assert parent_resp.status_code == 201
+    parent_id = int(parent_resp.json()["id"])
+    assert "parentId" not in parent_resp.json()
+
+    # Reply to the top-level comment
+    reply_resp = await client.post(
+        f"/rest/api/2/issue/{key}/comment",
+        json={"body": "Reply to top-level", "parentId": parent_id},
+        headers=AUTH_HEADER,
+    )
+    assert reply_resp.status_code == 201
+    assert reply_resp.json()["parentId"] == parent_id
+
+
+async def test_threaded_comment_in_list(client: httpx.AsyncClient):
+    """GET comment list should include parentId on child comments only."""
+    created = await _create_issue(client)
+    key = created["key"]
+
+    parent_resp = await client.post(
+        f"/rest/api/2/issue/{key}/comment",
+        json={"body": "Parent"},
+        headers=AUTH_HEADER,
+    )
+    parent_id = int(parent_resp.json()["id"])
+
+    await client.post(
+        f"/rest/api/2/issue/{key}/comment",
+        json={"body": "Child 1", "parentId": parent_id},
+        headers=AUTH_HEADER,
+    )
+    await client.post(
+        f"/rest/api/2/issue/{key}/comment",
+        json={"body": "Child 2", "parentId": parent_id},
+        headers=AUTH_HEADER,
+    )
+
+    resp = await client.get(
+        f"/rest/api/2/issue/{key}/comment",
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 200
+    comments = resp.json()["comments"]
+    assert len(comments) == 3
+
+    assert "parentId" not in comments[0]
+    assert comments[1]["parentId"] == parent_id
+    assert comments[2]["parentId"] == parent_id
+
+
+async def test_threaded_comment_single_level(client: httpx.AsyncClient):
+    """Replying to a child comment should resolve to the thread root."""
+    created = await _create_issue(client)
+    key = created["key"]
+
+    parent_resp = await client.post(
+        f"/rest/api/2/issue/{key}/comment",
+        json={"body": "Root"},
+        headers=AUTH_HEADER,
+    )
+    root_id = int(parent_resp.json()["id"])
+
+    child_resp = await client.post(
+        f"/rest/api/2/issue/{key}/comment",
+        json={"body": "Child", "parentId": root_id},
+        headers=AUTH_HEADER,
+    )
+    child_id = int(child_resp.json()["id"])
+
+    # Reply to the child — should resolve to the root
+    grandchild_resp = await client.post(
+        f"/rest/api/2/issue/{key}/comment",
+        json={"body": "Grandchild attempt", "parentId": child_id},
+        headers=AUTH_HEADER,
+    )
+    assert grandchild_resp.status_code == 201
+    assert grandchild_resp.json()["parentId"] == root_id
+
+
+async def test_threaded_comment_invalid_parent(client: httpx.AsyncClient):
+    """parentId referencing a non-existent comment should return 400."""
+    created = await _create_issue(client)
+    key = created["key"]
+
+    resp = await client.post(
+        f"/rest/api/2/issue/{key}/comment",
+        json={"body": "Orphan", "parentId": 99999},
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 400
+
+
+async def test_threaded_comment_in_issue_response(client: httpx.AsyncClient):
+    """parentId should appear in the issue GET response comments."""
+    created = await _create_issue(client)
+    key = created["key"]
+
+    parent_resp = await client.post(
+        f"/rest/api/2/issue/{key}/comment",
+        json={"body": "Thread starter"},
+        headers=AUTH_HEADER,
+    )
+    parent_id = int(parent_resp.json()["id"])
+
+    await client.post(
+        f"/rest/api/2/issue/{key}/comment",
+        json={"body": "Thread reply", "parentId": parent_id},
+        headers=AUTH_HEADER,
+    )
+
+    issue_resp = await client.get(
+        f"/rest/api/2/issue/{key}",
+        headers=AUTH_HEADER,
+    )
+    assert issue_resp.status_code == 200
+    comments = issue_resp.json()["fields"]["comment"]["comments"]
+    assert len(comments) == 2
+    assert "parentId" not in comments[0]
+    assert comments[1]["parentId"] == parent_id
+
+
+async def test_threaded_comment_v3(client: httpx.AsyncClient):
+    """Threaded comments should work identically via the v3 API surface."""
+    created = await _create_issue(client)
+    key = created["key"]
+
+    adf_parent = {
+        "type": "doc",
+        "version": 1,
+        "content": [{"type": "paragraph", "content": [{"type": "text", "text": "v3 parent"}]}],
+    }
+    parent_resp = await client.post(
+        f"/rest/api/3/issue/{key}/comment",
+        json={"body": adf_parent, "parentId": None},
+        headers=AUTH_HEADER,
+    )
+    assert parent_resp.status_code == 201
+    parent_id = int(parent_resp.json()["id"])
+
+    adf_reply = {
+        "type": "doc",
+        "version": 1,
+        "content": [{"type": "paragraph", "content": [{"type": "text", "text": "v3 reply"}]}],
+    }
+    reply_resp = await client.post(
+        f"/rest/api/3/issue/{key}/comment",
+        json={"body": adf_reply, "parentId": parent_id},
+        headers=AUTH_HEADER,
+    )
+    assert reply_resp.status_code == 201
+    assert reply_resp.json()["parentId"] == parent_id
+
+    resp = await client.get(
+        f"/rest/api/3/issue/{key}/comment",
+        headers=AUTH_HEADER,
+    )
+    comments = resp.json()["comments"]
+    assert "parentId" not in comments[0]
+    assert comments[1]["parentId"] == parent_id
