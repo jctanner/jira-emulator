@@ -215,11 +215,14 @@
 
             <!-- Comments Tab -->
             <div class="tab-panel active" id="comments-tab">
-                {% set comments = issue.fields.comment.comments if issue.fields.comment else [] %}
-                {% if comments %}
+                {% set all_comments = issue.fields.comment.comments if issue.fields.comment else [] %}
+                {% set top_level = all_comments | selectattr('parentId', 'undefined') | list %}
+                {% set top_level = top_level + (all_comments | selectattr('parentId', 'none') | list) %}
+                {% if all_comments %}
                 <div class="comment-list">
-                    {% for c in comments %}
-                    <div class="comment">
+                    {% for c in all_comments %}
+                    {% if not c.parentId %}
+                    <div class="comment" id="comment-{{ c.id }}">
                         <div class="comment-header">
                             {% set author_name = c.author.displayName | default('Unknown') if c.author else 'Unknown' %}
                             <div class="comment-avatar">{{ author_name[0] | upper }}</div>
@@ -227,7 +230,39 @@
                             <span class="comment-date">{{ c.created | default('') }}</span>
                         </div>
                         <div class="comment-body markdown-body" data-markdown>{{ c.body | default('') }}</div>
+                        <div class="comment-actions">
+                            <a href="#" class="reply-link" onclick="showReplyForm('{{ c.id }}'); return false;">Reply</a>
+                        </div>
+                        <!-- Child comments (replies) -->
+                        {% for child in all_comments %}
+                        {% if child.parentId == c.id | int %}
+                        <div class="comment comment-child">
+                            <div class="comment-header">
+                                {% set child_author = child.author.displayName | default('Unknown') if child.author else 'Unknown' %}
+                                <div class="comment-avatar comment-avatar-sm">{{ child_author[0] | upper }}</div>
+                                <span class="comment-author">{{ child_author }}</span>
+                                <span class="comment-date">{{ child.created | default('') }}</span>
+                            </div>
+                            <div class="comment-body markdown-body" data-markdown>{{ child.body | default('') }}</div>
+                            <div class="comment-actions">
+                                <a href="#" class="reply-link" onclick="showReplyForm('{{ c.id }}'); return false;">Reply</a>
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                        <!-- Reply form (hidden by default) -->
+                        <div class="reply-form-container" id="reply-form-{{ c.id }}" style="display: none;">
+                            <form method="post" action="/issue/{{ issue.key }}/comment" class="add-comment-form" style="margin-top: 8px;">
+                                <input type="hidden" name="parentId" value="{{ c.id }}">
+                                <textarea name="body" placeholder="Reply..." required rows="2"></textarea>
+                                <div style="text-align: right; margin-top: 8px;">
+                                    <a href="#" onclick="hideReplyForm('{{ c.id }}'); return false;" style="margin-right: 8px;">Cancel</a>
+                                    <button type="submit" class="btn btn-primary">Reply</button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
+                    {% endif %}
                     {% endfor %}
                 </div>
                 {% else %}
@@ -527,6 +562,28 @@
     text-transform: uppercase;
     color: var(--ds-text-subtlest, #6B6E76);
 }
+.comment-child {
+    margin-left: 32px;
+    border-left: 2px solid var(--ds-border, #DDDEE1);
+    padding-left: 12px;
+}
+.comment-avatar-sm {
+    width: 24px !important;
+    height: 24px !important;
+    font-size: 11px !important;
+    line-height: 24px !important;
+}
+.comment-actions {
+    margin-top: 4px;
+}
+.reply-link {
+    font-size: 12px;
+    color: var(--ds-link, #1868DB);
+    text-decoration: none;
+}
+.reply-link:hover {
+    text-decoration: underline;
+}
 .add-comment-form {
     margin-top: var(--ds-space-200, 16px);
     padding-top: var(--ds-space-200, 16px);
@@ -555,6 +612,12 @@ function switchTab(btn, tabId) {
     btn.closest('.card').querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
     btn.classList.add('active');
     document.getElementById(tabId).classList.add('active');
+}
+function showReplyForm(commentId) {
+    document.getElementById('reply-form-' + commentId).style.display = 'block';
+}
+function hideReplyForm(commentId) {
+    document.getElementById('reply-form-' + commentId).style.display = 'none';
 }
 function openEditModal() {
     document.getElementById('editModal').classList.add('open');

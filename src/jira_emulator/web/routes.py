@@ -821,6 +821,7 @@ async def add_comment_web(
     request: Request,
     db: AsyncSession = Depends(get_db),
     body: str = Form(...),
+    parentId: str | None = Form(default=None),
 ):
     """Add a comment to an issue from the web UI and redirect back."""
     from datetime import datetime
@@ -831,10 +832,15 @@ async def add_comment_web(
 
     admin = await get_or_create_user(db, "admin", "admin")
 
+    parent_id = None
+    if parentId:
+        parent_id = int(parentId)
+
     now = datetime.utcnow()
     comment = Comment(
         issue_id=issue.id,
         author_id=admin.id,
+        parent_id=parent_id,
         body=body,
         created_at=now,
         updated_at=now,

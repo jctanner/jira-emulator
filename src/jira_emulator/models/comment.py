@@ -14,6 +14,7 @@ class Comment(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False)
     author_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"))
+    parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("comments.id", ondelete="CASCADE"))
     body: Mapped[str] = mapped_column(Text, nullable=False)
     visibility_type: Mapped[str | None] = mapped_column(String)
     visibility_value: Mapped[str | None] = mapped_column(String)
@@ -22,6 +23,8 @@ class Comment(Base):
 
     issue: Mapped["Issue"] = relationship(back_populates="comments")
     author: Mapped["User | None"] = relationship()
+    parent: Mapped["Comment | None"] = relationship(remote_side="Comment.id", back_populates="children")
+    children: Mapped[list["Comment"]] = relationship(back_populates="parent")
 
 
 from jira_emulator.models.user import User  # noqa: E402, F401
