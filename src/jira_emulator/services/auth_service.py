@@ -77,6 +77,8 @@ async def validate_api_token(db: AsyncSession, raw_token: str) -> User | None:
     for token in tokens:
         if token.expires_at and token.expires_at < now:
             continue
+        if not token.user.active:
+            continue
         if verify_token_hash(raw_token, token.token_hash):
             token.last_used_at = now
             await db.flush()
@@ -94,6 +96,8 @@ async def authenticate_basic(db: AsyncSession, username_or_email: str, password:
     user = result.scalar_one_or_none()
 
     if user is None:
+        return None
+    if not user.active:
         return None
     if user.password_hash is None:
         return None

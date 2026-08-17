@@ -11,6 +11,12 @@
 {% if project_error %}
 <div class="result-banner result-banner-error">{{ project_error }}</div>
 {% endif %}
+{% if user_message %}
+<div class="result-banner result-banner-success">{{ user_message }}</div>
+{% endif %}
+{% if user_error %}
+<div class="result-banner result-banner-error">{{ user_error }}</div>
+{% endif %}
 
 <div class="card">
     <h2>Project Maintenance</h2>
@@ -74,6 +80,74 @@
     </table>
     {% else %}
     <p style="color: var(--ds-text-subtlest); font-style: italic;">No projects yet.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>User Management</h2>
+    <p style="color: var(--ds-text-subtle); margin-bottom: var(--ds-space-200);">
+        {{ users | length }} user{{ '' if users | length == 1 else 's' }}. Credential details show status only; stored secrets are not displayed.
+    </p>
+
+    <form method="post" action="/admin/users" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--ds-space-100); align-items: end; margin-bottom: var(--ds-space-300);">
+        <div class="form-field" style="margin-bottom: 0;">
+            <label>Username</label>
+            <input type="text" name="username" autocomplete="off" required style="width: 100%;">
+        </div>
+        <div class="form-field" style="margin-bottom: 0;">
+            <label>Display name</label>
+            <input type="text" name="display_name" required style="width: 100%;">
+        </div>
+        <div class="form-field" style="margin-bottom: 0;">
+            <label>Email</label>
+            <input type="email" name="email" required style="width: 100%;">
+        </div>
+        <div class="form-field" style="margin-bottom: 0;">
+            <label>Initial password</label>
+            <input type="password" name="password" autocomplete="new-password" required style="width: 100%;">
+        </div>
+        <button type="submit" class="btn btn-primary">Add User</button>
+    </form>
+
+    {% if users %}
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Display name</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Password</th>
+                    <th style="text-align: right;">Active tokens</th>
+                    <th>Created</th>
+                    <th style="text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td style="font-family: monospace;">{{ user.username }}</td>
+                    <td>{{ user.display_name }}</td>
+                    <td>{{ user.email or '—' }}</td>
+                    <td>
+                        {% if user.active %}
+                        <span class="lozenge lozenge-done">Active</span>
+                        {% else %}
+                        <span class="lozenge lozenge-default">Inactive</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ 'Password set' if user.has_password else 'No password' }}</td>
+                    <td style="text-align: right;">{{ user.active_token_count }}</td>
+                    <td style="white-space: nowrap;">{{ user.created_at }}</td>
+                    <td style="text-align: right;"><a class="btn btn-default" href="/admin/users/{{ user.username | urlencode }}">Manage</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p style="color: var(--ds-text-subtlest); font-style: italic;">No users yet.</p>
     {% endif %}
 </div>
 

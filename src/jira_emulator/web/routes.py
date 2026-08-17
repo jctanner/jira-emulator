@@ -17,6 +17,7 @@ from jira_emulator import __version__
 from jira_emulator.adf import adf_to_markdown, is_adf
 from jira_emulator.config import get_settings
 from jira_emulator.database import get_db
+from jira_emulator.models.api_token import ApiToken
 from jira_emulator.models.attachment import Attachment
 from jira_emulator.models.comment import Comment
 from jira_emulator.models.issue import Issue
@@ -26,7 +27,7 @@ from jira_emulator.models.priority import Priority
 from jira_emulator.models.project import Project
 from jira_emulator.models.status import Status
 from jira_emulator.models.user import User
-from jira_emulator.services import history_service, issue_service, search_service
+from jira_emulator.services import history_service, issue_service, search_service, user_service
 from jira_emulator.services.project_admin_service import create_project, delete_project
 from jira_emulator.services.snapshot_service import (
     create_snapshot,
@@ -63,6 +64,23 @@ async def _admin_template_context(request: Request, db: AsyncSession, **extra):
     )
     project_rows = (await db.execute(project_stmt)).all()
 
+    active_token_count = (
+        select(func.count(ApiToken.id))
+        .where(ApiToken.user_id == User.id, ApiToken.active.is_(True))
+        .correlate(User)
+        .scalar_subquery()
+    )
+    user_stmt = select(
+        User.username,
+        User.display_name,
+        User.email,
+        User.active,
+        User.password_hash,
+        User.created_at,
+        active_token_count.label("active_token_count"),
+    ).order_by(func.lower(User.username), User.username)
+    user_rows = (await db.execute(user_stmt)).all()
+
     context = {
         "version": __version__,
         "snapshots_enabled": snapshots_enabled,
@@ -79,8 +97,22 @@ async def _admin_template_context(request: Request, db: AsyncSession, **extra):
             }
             for row in project_rows
         ],
+        "users": [
+            {
+                "username": row.username,
+                "display_name": row.display_name,
+                "email": row.email,
+                "active": row.active,
+                "has_password": row.password_hash is not None,
+                "active_token_count": row.active_token_count,
+                "created_at": row.created_at.strftime("%Y-%m-%d %H:%M UTC"),
+            }
+            for row in user_rows
+        ],
         "project_message": request.query_params.get("project_message"),
         "project_error": request.query_params.get("project_error"),
+        "user_message": request.query_params.get("user_message"),
+        "user_error": request.query_params.get("user_error"),
     }
     context.update(extra)
     return context
@@ -331,6 +363,139 @@ async def admin_import_form(request: Request, db: AsyncSession = Depends(get_db)
         name="admin_import.html",
         context=await _admin_template_context(request, db),
     )
+
+
+@router.post("/admin/users")
+async def admin_user_create(
+    db: AsyncSession = Depends(get_db),
+    username: str = Form(...),
+    display_name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+):
+    """Create a user from the admin UI."""
+    try:
+        user = await user_service.create_managed_user(db, username, display_name, email, password)
+    except ValueError as exc:
+        query = urlencode({"user_error": str(exc)})
+    else:
+        query = urlencode({"user_message": f"User {user.username} created."})
+    return RedirectResponse(url=f"/admin/import?{query}", status_code=303)
+
+
+@router.get("/admin/users/{username}", response_class=HTMLResponse)
+async def admin_user_detail(request: Request, username: str, db: AsyncSession = Depends(get_db)):
+    """Render identity, credential metadata, and lifecycle controls for one user."""
+    user = await user_service.get_user_by_username(db, username)
+    if user is None:
+        return HTMLResponse("<h1>User not found</h1>", status_code=404)
+
+    tokens = (
+        (
+            await db.execute(
+                select(ApiToken).where(ApiToken.user_id == user.id).order_by(ApiToken.created_at.desc(), ApiToken.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    def format_datetime(value: datetime | None) -> str:
+        return value.strftime("%Y-%m-%d %H:%M UTC") if value else "—"
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin_user_detail.html",
+        context={
+            "version": __version__,
+            "user": user,
+            "tokens": [
+                {
+                    "id": token.id,
+                    "name": token.name,
+                    "prefix": token.token_prefix or "—",
+                    "active": token.active,
+                    "created_at": format_datetime(token.created_at),
+                    "expires_at": format_datetime(token.expires_at),
+                    "last_used_at": format_datetime(token.last_used_at),
+                }
+                for token in tokens
+            ],
+            "message": request.query_params.get("message"),
+            "error": request.query_params.get("error"),
+            "is_default_user": user.username == get_settings().DEFAULT_USER,
+        },
+    )
+
+
+def _user_detail_redirect(username: str, *, message: str | None = None, error: str | None = None):
+    query = urlencode({key: value for key, value in {"message": message, "error": error}.items() if value})
+    suffix = f"?{query}" if query else ""
+    return RedirectResponse(url=f"/admin/users/{username}{suffix}", status_code=303)
+
+
+@router.post("/admin/users/{username}/profile")
+async def admin_user_update_profile(
+    username: str,
+    db: AsyncSession = Depends(get_db),
+    display_name: str = Form(...),
+    email: str = Form(...),
+):
+    """Update a user's display name and email."""
+    user = await user_service.get_user_by_username(db, username)
+    if user is None:
+        return _user_detail_redirect(username, error="User not found.")
+    try:
+        await user_service.update_managed_user(db, user, display_name, email)
+    except ValueError as exc:
+        return _user_detail_redirect(username, error=str(exc))
+    return _user_detail_redirect(username, message="Profile updated.")
+
+
+@router.post("/admin/users/{username}/status")
+async def admin_user_update_status(
+    username: str,
+    db: AsyncSession = Depends(get_db),
+    active: bool = Form(...),
+):
+    """Activate or deactivate a user."""
+    user = await user_service.get_user_by_username(db, username)
+    if user is None:
+        return _user_detail_redirect(username, error="User not found.")
+    if not active and user.username == get_settings().DEFAULT_USER:
+        return _user_detail_redirect(username, error="The configured default user cannot be deactivated.")
+    await user_service.set_user_active(db, user, active)
+    state = "activated" if active else "deactivated; active tokens were revoked"
+    return _user_detail_redirect(username, message=f"User {state}.")
+
+
+@router.post("/admin/users/{username}/password")
+async def admin_user_reset_password(
+    username: str,
+    db: AsyncSession = Depends(get_db),
+    password: str = Form(...),
+):
+    """Set a new password without exposing the previous credential."""
+    user = await user_service.get_user_by_username(db, username)
+    if user is None:
+        return _user_detail_redirect(username, error="User not found.")
+    try:
+        await user_service.reset_password(db, user, password)
+    except ValueError as exc:
+        return _user_detail_redirect(username, error=str(exc))
+    return _user_detail_redirect(username, message="Password reset.")
+
+
+@router.post("/admin/users/{username}/tokens/{token_id}/revoke")
+async def admin_user_revoke_token(username: str, token_id: int, db: AsyncSession = Depends(get_db)):
+    """Revoke one token owned by the selected user."""
+    user = await user_service.get_user_by_username(db, username)
+    if user is None:
+        return _user_detail_redirect(username, error="User not found.")
+    token = await user_service.revoke_user_token(db, user, token_id)
+    if token is None:
+        return _user_detail_redirect(username, error="Token not found.")
+    return _user_detail_redirect(username, message=f"Token {token.name} revoked.")
 
 
 # ---------------------------------------------------------------------------

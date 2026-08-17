@@ -54,13 +54,16 @@ async def create_user(
             detail=_jira_error([f"A user with username '{body.name}' already exists."]),
         )
 
-    user = await user_service.create_user(
-        db,
-        username=body.name,
-        display_name=body.displayName,
-        email=body.emailAddress,
-        password=body.password,
-    )
+    try:
+        user = await user_service.create_managed_user(
+            db,
+            username=body.name,
+            display_name=body.displayName,
+            email=body.emailAddress,
+            password=body.password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=_jira_error([str(exc)]))
 
     return _format_user(user, base_url)
 
@@ -105,12 +108,15 @@ async def update_user(
             detail=_jira_error([f"User '{username}' does not exist."]),
         )
 
-    user = await user_service.update_user(
-        db,
-        user,
-        email=body.emailAddress,
-        display_name=body.displayName,
-    )
+    try:
+        user = await user_service.update_managed_user(
+            db,
+            user,
+            email=body.emailAddress if body.emailAddress is not None else user.email or "",
+            display_name=body.displayName if body.displayName is not None else user.display_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=_jira_error([str(exc)]))
 
     return _format_user(user, base_url)
 
