@@ -70,18 +70,15 @@ async def _admin_template_context(request: Request, db: AsyncSession, **extra):
         .correlate(User)
         .scalar_subquery()
     )
-    user_stmt = (
-        select(
-            User.username,
-            User.display_name,
-            User.email,
-            User.active,
-            User.password_hash,
-            User.created_at,
-            active_token_count.label("active_token_count"),
-        )
-        .order_by(func.lower(User.username), User.username)
-    )
+    user_stmt = select(
+        User.username,
+        User.display_name,
+        User.email,
+        User.active,
+        User.password_hash,
+        User.created_at,
+        active_token_count.label("active_token_count"),
+    ).order_by(func.lower(User.username), User.username)
     user_rows = (await db.execute(user_stmt)).all()
 
     context = {
