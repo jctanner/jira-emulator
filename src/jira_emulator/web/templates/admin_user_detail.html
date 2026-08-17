@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Manage {{ user.username }} - Jira Emulator{% endblock %}
+
+{% block content %}
+<p><a href="/admin/import">← Back to administration</a></p>
+<h1>Manage {{ user.username }}</h1>
+
+{% if message %}
+<div class="result-banner result-banner-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="result-banner result-banner-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+    <h2>Profile</h2>
+    <form method="post" action="/admin/users/{{ user.username | urlencode }}/profile" style="max-width: 560px;">
+        <div class="form-field">
+            <label>Username</label>
+            <input type="text" value="{{ user.username }}" disabled style="width: 100%;">
+        </div>
+        <div class="form-field">
+            <label>Display name</label>
+            <input type="text" name="display_name" value="{{ user.display_name }}" required style="width: 100%;">
+        </div>
+        <div class="form-field">
+            <label>Email</label>
+            <input type="email" name="email" value="{{ user.email or '' }}" required style="width: 100%;">
+        </div>
+        <button type="submit" class="btn btn-primary">Save Profile</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Account Status</h2>
+    <p>
+        Current status:
+        {% if user.active %}
+        <span class="lozenge lozenge-done">Active</span>
+        {% else %}
+        <span class="lozenge lozenge-default">Inactive</span>
+        {% endif %}
+    </p>
+    {% if user.active %}
+    <form method="post" action="/admin/users/{{ user.username | urlencode }}/status"
+          onsubmit="return confirm('Deactivate {{ user.username }} and revoke all active tokens?');">
+        <input type="hidden" name="active" value="false">
+        <button type="submit" class="btn" style="background: #AE2E24; color: #fff;" {% if is_default_user %}disabled title="The configured default user cannot be deactivated"{% endif %}>Deactivate</button>
+    </form>
+    {% else %}
+    <form method="post" action="/admin/users/{{ user.username | urlencode }}/status">
+        <input type="hidden" name="active" value="true">
+        <button type="submit" class="btn btn-primary">Activate</button>
+    </form>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Reset Password</h2>
+    <p style="color: var(--ds-text-subtle);">The existing password cannot be viewed. Setting a new password replaces its stored hash.</p>
+    <form method="post" action="/admin/users/{{ user.username | urlencode }}/password" style="display: flex; gap: var(--ds-space-100); align-items: end; max-width: 560px;">
+        <div class="form-field" style="margin-bottom: 0; flex: 1;">
+            <label>New password</label>
+            <input type="password" name="password" autocomplete="new-password" required style="width: 100%;">
+        </div>
+        <button type="submit" class="btn btn-primary">Reset Password</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>API Tokens</h2>
+    <p style="color: var(--ds-text-subtle);">Only non-secret token metadata is available. Raw token values and hashes are not displayed.</p>
+    {% if tokens %}
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Prefix</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Expires</th>
+                    <th>Last used</th>
+                    <th style="text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for token in tokens %}
+                <tr>
+                    <td>{{ token.name }}</td>
+                    <td style="font-family: monospace;">{{ token.prefix }}</td>
+                    <td>{{ 'Active' if token.active else 'Revoked' }}</td>
+                    <td>{{ token.created_at }}</td>
+                    <td>{{ token.expires_at }}</td>
+                    <td>{{ token.last_used_at }}</td>
+                    <td style="text-align: right;">
+                        {% if token.active %}
+                        <form method="post" action="/admin/users/{{ user.username | urlencode }}/tokens/{{ token.id }}/revoke" style="display: inline;"
+                              onsubmit="return confirm('Revoke token {{ token.name }}?');">
+                            <button type="submit" class="btn" style="background: #AE2E24; color: #fff;">Revoke</button>
+                        </form>
+                        {% else %}
+                        —
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p style="color: var(--ds-text-subtlest); font-style: italic;">No API tokens.</p>
+    {% endif %}
+</div>
+{% endblock %}

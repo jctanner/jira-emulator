@@ -236,7 +236,7 @@
         }
 
         /* Form inputs */
-        input[type="text"], input[type="search"], input[type="file"],
+        input[type="text"], input[type="search"], input[type="password"], input[type="email"], input[type="file"],
         select, textarea {
             font-family: inherit;
             font-size: 14px;
@@ -248,10 +248,10 @@
             height: 32px;
             transition: border-color 0.15s, background 0.15s;
         }
-        input[type="text"]:hover, input[type="search"]:hover, select:hover {
+        input[type="text"]:hover, input[type="search"]:hover, input[type="password"]:hover, input[type="email"]:hover, select:hover {
             background: var(--ds-background-input-hovered);
         }
-        input[type="text"]:focus, input[type="search"]:focus, select:focus, textarea:focus {
+        input[type="text"]:focus, input[type="search"]:focus, input[type="password"]:focus, input[type="email"]:focus, select:focus, textarea:focus {
             outline: none;
             border-color: var(--ds-border-focused);
             box-shadow: 0 0 0 1px var(--ds-border-focused);
