@@ -171,6 +171,7 @@ All settings are configured via environment variables:
 | `IMPORT_ON_STARTUP` | `false` | Import JSON files from `IMPORT_DIR` on startup |
 | `IMPORT_DIR` | `/data/import` | Directory to scan for JSON imports |
 | `ATTACHMENT_DIR` | `/data/attachments` | Directory for uploaded file attachments |
+| `DESCRIPTION_MAX_LENGTH` | `32767` | Maximum logical description characters after ADF normalization; override for deterministic tests |
 
 ## API Coverage
 

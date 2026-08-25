@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -21,6 +22,11 @@ class Settings(BaseSettings):
     SEED_DATA: bool = True
     ADMIN_PASSWORD: str = "admin"
     ATTACHMENT_DIR: str = "/data/attachments"
+    DESCRIPTION_MAX_LENGTH: int = Field(
+        default=32767,
+        ge=0,
+        description="Maximum logical description characters after ADF normalization.",
+    )
 
     model_config = {"env_prefix": "", "case_sensitive": True}
 

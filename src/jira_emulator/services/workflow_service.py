@@ -6,6 +6,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from jira_emulator.description_limits import validate_description
 from jira_emulator.models.issue import Issue
 from jira_emulator.models.project import ProjectWorkflow
 from jira_emulator.models.resolution import Resolution
@@ -120,6 +121,11 @@ async def execute_transition(
     """
 
     from jira_emulator.services import history_service
+
+    # Validate before changing status or recording transition history. Jira
+    # clients may include description in the same transition payload.
+    if fields and "description" in fields:
+        validate_description(fields["description"])
 
     workflow = await get_workflow_for_issue(db, issue)
     if workflow is None:
