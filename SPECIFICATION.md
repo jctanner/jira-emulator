@@ -1538,6 +1538,7 @@ CMD ["python", "-m", "jira_emulator", "serve"]
 | `DEFAULT_USER` | `admin` | Default user for unauthenticated requests |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `SEED_DATA` | `true` | Load seed data (projects, statuses, etc.) on first run |
+| `DESCRIPTION_MAX_LENGTH` | `32767` | Maximum logical issue-description characters after ADF normalization; tests may override this value |
 
 ### 11.4 Running
 

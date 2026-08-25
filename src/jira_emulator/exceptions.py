@@ -37,3 +37,15 @@ class JQLParseError(JiraEmulatorError):
     def __init__(self, detail: str):
         self.detail = detail
         super().__init__(f"Error in the JQL Query: {detail}")
+
+
+class DescriptionContentLimitExceededError(ValueError):
+    """Raised when an issue description exceeds the configured Jira limit."""
+
+    field = "description"
+    code = "CONTENT_LIMIT_EXCEEDED"
+
+    def __init__(self, limit: int, actual_length: int):
+        self.limit = limit
+        self.actual_length = actual_length
+        super().__init__(f"Description exceeds the configured limit of {limit} logical characters")

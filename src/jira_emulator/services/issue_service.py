@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from jira_emulator.adf import adf_to_text, is_adf, serialize_adf, text_to_adf
+from jira_emulator.description_limits import validate_description, validate_description_update_ops
 from jira_emulator.models.attachment import Attachment
 from jira_emulator.models.comment import Comment
 from jira_emulator.models.component import Component, IssueComponent
@@ -197,6 +198,10 @@ async def create_issue(
 
     Raises ``ValueError`` when the project or issue type cannot be resolved.
     """
+
+    # Validate before resolving or allocating anything so a rejected create
+    # cannot mutate the issue sequence, issue table, or history.
+    validate_description(fields.get("description"))
 
     # -- project --
     project_data = fields.get("project", {})
@@ -462,6 +467,13 @@ async def update_issue(
     issue = await get_issue(db, issue_id_or_key)
     if issue is None:
         raise ValueError(f"Issue '{issue_id_or_key}' not found")
+
+    # Validate all possible description writes before applying any other field
+    # or recording any history entry. This keeps a rejected update atomic from
+    # the caller's perspective.
+    if fields and "description" in fields:
+        validate_description(fields["description"])
+    validate_description_update_ops(update_ops)
 
     if fields:
         await _apply_field_updates(db, issue, fields, author_id=author_id)
@@ -792,6 +804,27 @@ async def _apply_update_ops(
     author_id: int | None = None,
 ) -> None:
     """Apply Jira ``update``-style operations (add/remove/set)."""
+
+    # Description update operations are replacement operations. Validation is
+    # performed in update_issue before any operation is applied.
+    if "description" in update_ops:
+        old = issue.description
+        new = old
+        for operation in update_ops["description"]:
+            if isinstance(operation, dict) and "set" in operation:
+                new = serialize_adf(operation["set"])
+        if old != new:
+            issue.description = new
+            await history_service.record_change(
+                db,
+                issue.id,
+                author_id,
+                "description",
+                old,
+                None,
+                new,
+                None,
+            )
 
     # labels
     if "labels" in update_ops:

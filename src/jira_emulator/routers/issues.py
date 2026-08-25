@@ -11,6 +11,7 @@ from jira_emulator.adf import serialize_adf
 from jira_emulator.auth.middleware import get_current_user
 from jira_emulator.config import get_settings
 from jira_emulator.database import get_db
+from jira_emulator.exceptions import DescriptionContentLimitExceededError
 from jira_emulator.models.comment import Comment
 from jira_emulator.models.user import User
 from jira_emulator.models.watcher import Watcher
@@ -74,6 +75,8 @@ async def create_issue(
 
     try:
         issue = await issue_service.create_issue(db, body.fields, current_user)
+    except DescriptionContentLimitExceededError:
+        raise
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
@@ -138,6 +141,8 @@ async def update_issue(
             update_ops=body.update,
             author_id=current_user.id,
         )
+    except DescriptionContentLimitExceededError:
+        raise
     except ValueError as exc:
         raise HTTPException(
             status_code=404,
@@ -401,6 +406,8 @@ async def perform_transition(
             author_id=current_user.id,
             fields=body.fields,
         )
+    except DescriptionContentLimitExceededError:
+        raise
     except ValueError as exc:
         raise HTTPException(
             status_code=400,

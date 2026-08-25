@@ -13,6 +13,7 @@ from jira_emulator import __version__
 from jira_emulator.config import get_settings
 from jira_emulator.database import get_session_factory, init_db
 from jira_emulator.exceptions import (
+    DescriptionContentLimitExceededError,
     InvalidTransitionError,
     IssueNotFoundError,
     JQLParseError,
@@ -173,6 +174,13 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=400,
             content={"errorMessages": [str(exc)], "errors": {}},
+        )
+
+    @app.exception_handler(DescriptionContentLimitExceededError)
+    async def description_content_limit_handler(request: Request, exc: DescriptionContentLimitExceededError):
+        return JSONResponse(
+            status_code=400,
+            content={"errorMessages": [], "errors": {exc.field: exc.code}},
         )
 
     @app.exception_handler(IssueNotFoundError)

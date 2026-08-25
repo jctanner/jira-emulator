@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jira_emulator.adf import serialize_adf
+from jira_emulator.description_limits import validate_description
 from jira_emulator.models.comment import Comment
 from jira_emulator.models.component import Component, IssueComponent
 from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue
@@ -422,6 +423,10 @@ async def import_issue(
     """
     issue_key: str = issue_data.get("key", "")
     try:
+        # Validate before creating related records or changing an existing
+        # issue. Import errors are collected by this function's error path.
+        description = issue_data.get("description")
+        validate_description(description)
         project_key, issue_number = _parse_issue_key(issue_key)
 
         # 1. Auto-create project
@@ -481,7 +486,7 @@ async def import_issue(
         if existing_issue:
             # UPDATE path
             existing_issue.summary = issue_data.get("summary", existing_issue.summary)
-            existing_issue.description = serialize_adf(issue_data.get("description"))
+            existing_issue.description = serialize_adf(description)
             existing_issue.project_id = project.id
             existing_issue.issue_type_id = issue_type.id
             existing_issue.status_id = status.id
@@ -501,7 +506,7 @@ async def import_issue(
                 project_id=project.id,
                 issue_type_id=issue_type.id,
                 summary=issue_data.get("summary", ""),
-                description=serialize_adf(issue_data.get("description")),
+                description=serialize_adf(description),
                 status_id=status.id,
                 priority_id=priority.id if priority else None,
                 assignee_id=assignee.id if assignee else None,

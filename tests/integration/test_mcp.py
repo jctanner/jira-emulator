@@ -58,6 +58,29 @@ async def test_mcp_create_and_get_issue(mcp_sse_url: str, client: httpx.AsyncCli
 
 
 @pytest.mark.asyncio
+async def test_mcp_description_limit_uses_jira_error(mcp_sse_url: str):
+    """MCP issue creation delegates description validation to the REST API."""
+    async with _mcp_session(mcp_sse_url) as session:
+        result = await session.call_tool(
+            "createJiraIssue",
+            {
+                "projectKey": "TEST",
+                "issueTypeName": "Bug",
+                "summary": "MCP oversized description",
+                "description": "x" * 32768,
+            },
+        )
+        assert not result.isError
+        data = json.loads(result.content[0].text)
+        assert data["error"] is True
+        assert data["status"] == 400
+        assert json.loads(data["body"]) == {
+            "errorMessages": [],
+            "errors": {"description": "CONTENT_LIMIT_EXCEEDED"},
+        }
+
+
+@pytest.mark.asyncio
 async def test_mcp_search(mcp_sse_url: str):
     async with _mcp_session(mcp_sse_url) as session:
         await session.call_tool(
