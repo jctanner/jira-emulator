@@ -76,9 +76,7 @@ async def init_db(engine=None):
             columns = await conn.execute(text(f"PRAGMA table_info({table})"))
             names = {row[1] for row in columns.fetchall()}
             if column not in names:
-                await conn.execute(
-                    text(f"ALTER TABLE {table} ADD COLUMN {column} BOOLEAN NOT NULL DEFAULT 1")
-                )
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} BOOLEAN NOT NULL DEFAULT 1"))
 
 
 def reset_engine():

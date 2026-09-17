@@ -130,10 +130,20 @@ async def set_issue_property(
         db.add(prop)
         await db.flush()
         event = "issue_property_set"
-    await enqueue_event(db, event, {"timestamp": int(datetime.utcnow().timestamp() * 1000), "webhookEvent": event,
-        "issue": {"id": str(issue.id), "key": issue.key}, "property": {"key": propertyKey, "value": json.loads(value_str)},
-        "urlContext": {"issue.id": issue.id, "issue.key": issue.key, "property.key": propertyKey}},
-        project_id=issue.project_id, issue_fields={"issueKey": issue.key}, property_key=propertyKey)
+    await enqueue_event(
+        db,
+        event,
+        {
+            "timestamp": int(datetime.utcnow().timestamp() * 1000),
+            "webhookEvent": event,
+            "issue": {"id": str(issue.id), "key": issue.key},
+            "property": {"key": propertyKey, "value": json.loads(value_str)},
+            "urlContext": {"issue.id": issue.id, "issue.key": issue.key, "property.key": propertyKey},
+        },
+        project_id=issue.project_id,
+        issue_fields={"issueKey": issue.key},
+        property_key=propertyKey,
+    )
     if existing is not None:
         return Response(status_code=200)
     return Response(status_code=201)
@@ -162,8 +172,18 @@ async def delete_issue_property(
         )
     await db.delete(prop)
     await db.flush()
-    await enqueue_event(db, "issue_property_deleted", {"timestamp": int(datetime.utcnow().timestamp() * 1000), "webhookEvent": "issue_property_deleted",
-        "issue": {"id": str(issue.id), "key": issue.key}, "property": {"key": propertyKey},
-        "urlContext": {"issue.id": issue.id, "issue.key": issue.key, "property.key": propertyKey}},
-        project_id=issue.project_id, issue_fields={"issueKey": issue.key}, property_key=propertyKey)
+    await enqueue_event(
+        db,
+        "issue_property_deleted",
+        {
+            "timestamp": int(datetime.utcnow().timestamp() * 1000),
+            "webhookEvent": "issue_property_deleted",
+            "issue": {"id": str(issue.id), "key": issue.key},
+            "property": {"key": propertyKey},
+            "urlContext": {"issue.id": issue.id, "issue.key": issue.key, "property.key": propertyKey},
+        },
+        project_id=issue.project_id,
+        issue_fields={"issueKey": issue.key},
+        property_key=propertyKey,
+    )
     return Response(status_code=204)

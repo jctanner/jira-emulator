@@ -23,9 +23,9 @@ from jira_emulator.schemas.issue import (
     UpdateIssueRequest,
 )
 from jira_emulator.services import history_service, issue_service
-from jira_emulator.services.webhook_service import enqueue_event
 from jira_emulator.services.issue_service import _format_rich_field
 from jira_emulator.services.user_service import get_or_create_user
+from jira_emulator.services.webhook_service import enqueue_event
 
 logger = logging.getLogger(__name__)
 
@@ -86,16 +86,26 @@ async def create_issue(
         )
 
     project_key = (body.fields.get("project") or {}).get("key", "")
-    await enqueue_event(db, "jira:issue_created", {
-        "timestamp": int(datetime.utcnow().timestamp() * 1000),
-        "webhookEvent": "jira:issue_created",
-        "user": _format_user(current_user, base_url),
-        "issue": {"id": str(issue.id), "key": issue.key, "fields": {"summary": issue.summary}},
-        "issue_event_type_name": "issue_created",
-        "urlContext": {"issue.id": issue.id, "issue.key": issue.key, "project.id": issue.project_id,
-                        "project.key": project_key},
-    }, project_id=issue.project_id, issue_fields={"project": project_key, "issueKey": issue.key},
-        trace=request.headers.get("X-Atlassian-Webhook-Trace"))
+    await enqueue_event(
+        db,
+        "jira:issue_created",
+        {
+            "timestamp": int(datetime.utcnow().timestamp() * 1000),
+            "webhookEvent": "jira:issue_created",
+            "user": _format_user(current_user, base_url),
+            "issue": {"id": str(issue.id), "key": issue.key, "fields": {"summary": issue.summary}},
+            "issue_event_type_name": "issue_created",
+            "urlContext": {
+                "issue.id": issue.id,
+                "issue.key": issue.key,
+                "project.id": issue.project_id,
+                "project.key": project_key,
+            },
+        },
+        project_id=issue.project_id,
+        issue_fields={"project": project_key, "issueKey": issue.key},
+        trace=request.headers.get("X-Atlassian-Webhook-Trace"),
+    )
     return {
         "id": str(issue.id),
         "key": issue.key,
@@ -166,19 +176,31 @@ async def update_issue(
     if issue:
         project = await db.get(Project, issue.project_id)
         project_key = project.key if project else ""
-        await enqueue_event(db, "jira:issue_updated", {
-            "timestamp": int(datetime.utcnow().timestamp() * 1000), "webhookEvent": "jira:issue_updated",
-            "user": _format_user(current_user, get_settings().BASE_URL),
-            "issue": {"id": str(issue.id), "key": issue.key, "fields": {"summary": issue.summary}},
-            "issue_event_type_name": "issue_generic",
-            "changelog": {
-                "id": issue.id,
-                "items": [{"field": key, "fieldtype": "jira"} for key in (body.fields or {})],
+        await enqueue_event(
+            db,
+            "jira:issue_updated",
+            {
+                "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                "webhookEvent": "jira:issue_updated",
+                "user": _format_user(current_user, get_settings().BASE_URL),
+                "issue": {"id": str(issue.id), "key": issue.key, "fields": {"summary": issue.summary}},
+                "issue_event_type_name": "issue_generic",
+                "changelog": {
+                    "id": issue.id,
+                    "items": [{"field": key, "fieldtype": "jira"} for key in (body.fields or {})],
+                },
+                "urlContext": {
+                    "issue.id": issue.id,
+                    "issue.key": issue.key,
+                    "project.id": issue.project_id,
+                    "project.key": project_key,
+                },
             },
-            "urlContext": {"issue.id": issue.id, "issue.key": issue.key, "project.id": issue.project_id,
-                            "project.key": project_key},
-        }, project_id=issue.project_id, issue_fields={"project": project_key, "issueKey": issue.key},
-            changed_fields=set((body.fields or {}).keys()), trace=request.headers.get("X-Atlassian-Webhook-Trace"))
+            project_id=issue.project_id,
+            issue_fields={"project": project_key, "issueKey": issue.key},
+            changed_fields=set((body.fields or {}).keys()),
+            trace=request.headers.get("X-Atlassian-Webhook-Trace"),
+        )
     return Response(status_code=204)
 
 
@@ -200,15 +222,26 @@ async def delete_issue(
     if issue:
         project = await db.get(Project, issue.project_id)
         project_key = project.key if project else ""
-        await enqueue_event(db, "jira:issue_deleted", {
-            "timestamp": int(datetime.utcnow().timestamp() * 1000), "webhookEvent": "jira:issue_deleted",
-            "user": _format_user(current_user, get_settings().BASE_URL),
-            "issue": {"id": str(issue.id), "key": issue.key, "fields": {"summary": issue.summary}},
-            "issue_event_type_name": "issue_deleted",
-            "urlContext": {"issue.id": issue.id, "issue.key": issue.key, "project.id": issue.project_id,
-                            "project.key": project_key},
-        }, project_id=issue.project_id, issue_fields={"project": project_key, "issueKey": issue.key},
-            trace=request.headers.get("X-Atlassian-Webhook-Trace"))
+        await enqueue_event(
+            db,
+            "jira:issue_deleted",
+            {
+                "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                "webhookEvent": "jira:issue_deleted",
+                "user": _format_user(current_user, get_settings().BASE_URL),
+                "issue": {"id": str(issue.id), "key": issue.key, "fields": {"summary": issue.summary}},
+                "issue_event_type_name": "issue_deleted",
+                "urlContext": {
+                    "issue.id": issue.id,
+                    "issue.key": issue.key,
+                    "project.id": issue.project_id,
+                    "project.key": project_key,
+                },
+            },
+            project_id=issue.project_id,
+            issue_fields={"project": project_key, "issueKey": issue.key},
+            trace=request.headers.get("X-Atlassian-Webhook-Trace"),
+        )
     return Response(status_code=204)
 
 
@@ -370,13 +403,27 @@ async def add_comment(
     if comment.parent_id is not None:
         resp["parentId"] = comment.parent_id
     project = await db.get(Project, issue.project_id)
-    await enqueue_event(db, "comment_created", {
-        "timestamp": int(datetime.utcnow().timestamp() * 1000), "webhookEvent": "comment_created",
-        "user": _format_user(current_user, base_url), "issue": {"id": str(issue.id), "key": issue.key},
-        "comment": resp, "urlContext": {"issue.id": issue.id, "issue.key": issue.key, "comment.id": comment.id,
-                                            "project.id": issue.project_id, "project.key": project.key if project else ""},
-    }, project_id=issue.project_id, issue_fields={"project": project.key if project else "", "issueKey": issue.key},
-        trace=request.headers.get("X-Atlassian-Webhook-Trace"))
+    await enqueue_event(
+        db,
+        "comment_created",
+        {
+            "timestamp": int(datetime.utcnow().timestamp() * 1000),
+            "webhookEvent": "comment_created",
+            "user": _format_user(current_user, base_url),
+            "issue": {"id": str(issue.id), "key": issue.key},
+            "comment": resp,
+            "urlContext": {
+                "issue.id": issue.id,
+                "issue.key": issue.key,
+                "comment.id": comment.id,
+                "project.id": issue.project_id,
+                "project.key": project.key if project else "",
+            },
+        },
+        project_id=issue.project_id,
+        issue_fields={"project": project.key if project else "", "issueKey": issue.key},
+        trace=request.headers.get("X-Atlassian-Webhook-Trace"),
+    )
     return resp
 
 

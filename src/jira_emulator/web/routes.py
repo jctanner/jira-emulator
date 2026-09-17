@@ -82,8 +82,8 @@ async def _admin_template_context(request: Request, db: AsyncSession, **extra):
     ).order_by(func.lower(User.username), User.username)
     user_rows = (await db.execute(user_stmt)).all()
     webhook_rows = (
-        await db.execute(select(Webhook).where(Webhook.kind == "admin").order_by(Webhook.id))
-    ).scalars().all()
+        (await db.execute(select(Webhook).where(Webhook.kind == "admin").order_by(Webhook.id))).scalars().all()
+    )
 
     context = {
         "version": __version__,
@@ -121,8 +121,13 @@ async def _admin_template_context(request: Request, db: AsyncSession, **extra):
         "webhook_error": request.query_params.get("webhook_error"),
         "webhooks": [
             {
-                "id": row.id, "project_id": row.project_id, "name": row.name, "url": row.url,
-                "events": json.loads(row.events), "enabled": row.enabled, "signed": row.secret is not None,
+                "id": row.id,
+                "project_id": row.project_id,
+                "name": row.name,
+                "url": row.url,
+                "events": json.loads(row.events),
+                "enabled": row.enabled,
+                "signed": row.secret is not None,
                 "verify_ssl": row.verify_ssl,
             }
             for row in webhook_rows
@@ -640,9 +645,15 @@ async def admin_webhook_create(
         try:
             await webhook_service.create_admin(
                 db,
-                {"name": name, "url": url, "events": events, "secret": secret, "enabled": enabled,
-                 "allowInsecureSsl": allow_insecure_ssl,
-                 "filters": {"issue-related-events-section": f'project = "{project.key}"'}},
+                {
+                    "name": name,
+                    "url": url,
+                    "events": events,
+                    "secret": secret,
+                    "enabled": enabled,
+                    "allowInsecureSsl": allow_insecure_ssl,
+                    "filters": {"issue-related-events-section": f'project = "{project.key}"'},
+                },
                 project_id=project.id,
             )
             query = urlencode({"webhook_message": f"Webhook for {project.key} created."})

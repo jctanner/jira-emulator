@@ -128,11 +128,19 @@ async def upload_attachments(
         )
 
         results.append(_format_attachment(att_loaded, base_url))
-        await enqueue_event(db, "attachment_created", {"timestamp": int(now.timestamp() * 1000),
-            "webhookEvent": "attachment_created", "issue": {"id": str(issue.id), "key": issue.key},
-            "attachment": results[-1], "urlContext": {"issue.id": issue.id, "issue.key": issue.key,
-                                                         "attachment.id": attachment.id}}, project_id=issue.project_id,
-            issue_fields={"issueKey": issue.key})
+        await enqueue_event(
+            db,
+            "attachment_created",
+            {
+                "timestamp": int(now.timestamp() * 1000),
+                "webhookEvent": "attachment_created",
+                "issue": {"id": str(issue.id), "key": issue.key},
+                "attachment": results[-1],
+                "urlContext": {"issue.id": issue.id, "issue.key": issue.key, "attachment.id": attachment.id},
+            },
+            project_id=issue.project_id,
+            issue_fields={"issueKey": issue.key},
+        )
 
     return results
 
@@ -198,9 +206,17 @@ async def delete_attachment(
 
     await db.delete(att)
     await db.flush()
-    await enqueue_event(db, "attachment_deleted", {"timestamp": int(datetime.utcnow().timestamp() * 1000),
-        "webhookEvent": "attachment_deleted", "attachment": {"id": str(att.id), "filename": att.filename},
-        "urlContext": {"attachment.id": att.id}}, project_id=att.issue_id)
+    await enqueue_event(
+        db,
+        "attachment_deleted",
+        {
+            "timestamp": int(datetime.utcnow().timestamp() * 1000),
+            "webhookEvent": "attachment_deleted",
+            "attachment": {"id": str(att.id), "filename": att.filename},
+            "urlContext": {"attachment.id": att.id},
+        },
+        project_id=att.issue_id,
+    )
 
     return Response(status_code=204)
 

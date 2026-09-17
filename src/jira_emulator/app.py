@@ -86,16 +86,26 @@ async def lifespan(app: FastAPI):
     # contend with request sessions and make tests/non-server embeds unsafe.
     if settings.WEBHOOKS_ENABLED and settings.DATABASE_URL != "sqlite+aiosqlite://":
         import asyncio
-        from jira_emulator.services.webhook_service import claim_due, deliver_once
-        from jira_emulator.models.webhook import WebhookOutbox
         from datetime import datetime, timedelta
+
+        from jira_emulator.models.webhook import WebhookOutbox
+        from jira_emulator.services.webhook_service import claim_due, deliver_once
 
         async def worker():
             while True:
                 factory = get_session_factory()
                 async with factory() as db:
-                    stale = (await db.execute(__import__("sqlalchemy").select(WebhookOutbox).where(
-                        WebhookOutbox.state == "delivering"))).scalars().all()
+                    stale = (
+                        (
+                            await db.execute(
+                                __import__("sqlalchemy")
+                                .select(WebhookOutbox)
+                                .where(WebhookOutbox.state == "delivering")
+                            )
+                        )
+                        .scalars()
+                        .all()
+                    )
                     for row in stale:
                         row.state = "pending"
                         row.next_attempt_at = datetime.utcnow()
@@ -112,12 +122,16 @@ async def lifespan(app: FastAPI):
                         if ok:
                             fresh.state = "delivered"
                             fresh.delivered_at = datetime.utcnow()
-                        elif fresh.attempt_count >= 6 or (status is not None and status < 500 and status not in {408, 409, 425, 429}):
+                        elif fresh.attempt_count >= 6 or (
+                            status is not None and status < 500 and status not in {408, 409, 425, 429}
+                        ):
                             fresh.state = "failed"
                             fresh.failed_at = datetime.utcnow()
                         else:
                             fresh.state = "pending"
-                            fresh.next_attempt_at = datetime.utcnow() + timedelta(seconds=min(900, 2 ** fresh.attempt_count))
+                            fresh.next_attempt_at = datetime.utcnow() + timedelta(
+                                seconds=min(900, 2**fresh.attempt_count)
+                            )
                         await db.commit()
                 await asyncio.sleep(settings.WEBHOOK_WORKER_POLL_SECONDS)
 

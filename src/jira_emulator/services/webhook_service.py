@@ -22,7 +22,9 @@ logger = logging.getLogger(__name__)
 def _jql_matches(jql: str, fields: dict) -> bool:
     """Evaluate the small, useful webhook JQL subset without building SQL."""
     for clause in re.split(r"\s+AND\s+", jql, flags=re.IGNORECASE):
-        match = re.match(r"\s*(project|status|issueKey|issuetype|priority)\s*(=|!=)\s*[\"']?([^\"']+?)[\"']?\s*$", clause, re.I)
+        match = re.match(
+            r"\s*(project|status|issueKey|issuetype|priority)\s*(=|!=)\s*[\"']?([^\"']+?)[\"']?\s*$", clause, re.I
+        )
         if not match:
             return False
         field, operator, expected = match.groups()
@@ -34,30 +36,87 @@ def _jql_matches(jql: str, fields: dict) -> bool:
             return False
     return True
 
+
 EVENTS = {
-    "jira:issue_created", "jira:issue_updated", "jira:issue_deleted",
-    "issue_property_set", "issue_property_deleted", "comment_created", "comment_updated",
-    "comment_deleted", "attachment_created", "attachment_deleted", "issuelink_created",
-    "issuelink_deleted", "project_created", "project_updated", "project_deleted",
-    "project_soft_deleted", "project_restored_deleted", "project_archived",
-    "project_restored_archived", "jira:version_released", "jira:version_unreleased",
-    "jira:version_created", "jira:version_moved", "jira:version_updated", "jira:version_merged",
-    "jira:version_deleted", "issuetype_created", "issuetype_updated", "issuetype_deleted",
-    "user_created", "user_updated", "user_deleted", "worklog_created", "worklog_updated",
-    "worklog_deleted", "sprint_created", "sprint_updated", "sprint_deleted", "sprint_started",
-    "sprint_closed", "board_created", "board_updated", "board_deleted", "board_configuration_changed",
-    "filter_created", "filter_updated", "filter_deleted", "app_access_to_objects_blocked",
-    "app_access_to_objects_in_container_blocked", "jira_expression_evaluation_failed",
-    "option_voting_changed", "option_watching_changed", "option_unassigned_issues_changed",
-    "option_subtasks_changed", "option_issuelinks_changed", "option_timetracking_changed",
+    "jira:issue_created",
+    "jira:issue_updated",
+    "jira:issue_deleted",
+    "issue_property_set",
+    "issue_property_deleted",
+    "comment_created",
+    "comment_updated",
+    "comment_deleted",
+    "attachment_created",
+    "attachment_deleted",
+    "issuelink_created",
+    "issuelink_deleted",
+    "project_created",
+    "project_updated",
+    "project_deleted",
+    "project_soft_deleted",
+    "project_restored_deleted",
+    "project_archived",
+    "project_restored_archived",
+    "jira:version_released",
+    "jira:version_unreleased",
+    "jira:version_created",
+    "jira:version_moved",
+    "jira:version_updated",
+    "jira:version_merged",
+    "jira:version_deleted",
+    "issuetype_created",
+    "issuetype_updated",
+    "issuetype_deleted",
+    "user_created",
+    "user_updated",
+    "user_deleted",
+    "worklog_created",
+    "worklog_updated",
+    "worklog_deleted",
+    "sprint_created",
+    "sprint_updated",
+    "sprint_deleted",
+    "sprint_started",
+    "sprint_closed",
+    "board_created",
+    "board_updated",
+    "board_deleted",
+    "board_configuration_changed",
+    "filter_created",
+    "filter_updated",
+    "filter_deleted",
+    "app_access_to_objects_blocked",
+    "app_access_to_objects_in_container_blocked",
+    "jira_expression_evaluation_failed",
+    "option_voting_changed",
+    "option_watching_changed",
+    "option_unassigned_issues_changed",
+    "option_subtasks_changed",
+    "option_issuelinks_changed",
+    "option_timetracking_changed",
     "option_timetracking_provider_changed",
 }
 DYNAMIC_EVENTS = {
-    "jira:issue_created", "jira:issue_updated", "jira:issue_deleted", "comment_created",
-    "comment_updated", "comment_deleted", "issue_property_set", "issue_property_deleted",
-    "sprint_created", "sprint_updated", "sprint_closed", "sprint_deleted", "sprint_started",
-    "jira:version_released", "jira:version_unreleased", "jira:version_created", "jira:version_moved",
-    "jira:version_updated", "jira:version_merged", "jira:version_deleted",
+    "jira:issue_created",
+    "jira:issue_updated",
+    "jira:issue_deleted",
+    "comment_created",
+    "comment_updated",
+    "comment_deleted",
+    "issue_property_set",
+    "issue_property_deleted",
+    "sprint_created",
+    "sprint_updated",
+    "sprint_closed",
+    "sprint_deleted",
+    "sprint_started",
+    "jira:version_released",
+    "jira:version_unreleased",
+    "jira:version_created",
+    "jira:version_moved",
+    "jira:version_updated",
+    "jira:version_merged",
+    "jira:version_deleted",
 }
 
 
@@ -130,15 +189,22 @@ async def create_admin(db: AsyncSession, body: dict, project_id: int | None = No
         raise ValueError(f"Unsupported webhook event: {unknown[0]}")
     _validate_url(body["url"])
     filters = body.get("filters") or {}
-    webhook = Webhook(kind="admin", project_id=project_id, name=body["name"], description=body.get("description"),
-                      url=body["url"], events=_dump(events) or "[]",
-                      jql_filter=filters.get("issue-related-events-section"),
-                      exclude_body=bool(body.get("excludeBody", False)),
-                      verify_ssl=bool(body.get("verifySsl", not body.get("allowInsecureSsl", False))),
-                      secret=body.get("secret") or None,
-                      enabled=bool(body.get("enabled", True)))
+    webhook = Webhook(
+        kind="admin",
+        project_id=project_id,
+        name=body["name"],
+        description=body.get("description"),
+        url=body["url"],
+        events=_dump(events) or "[]",
+        jql_filter=filters.get("issue-related-events-section"),
+        exclude_body=bool(body.get("excludeBody", False)),
+        verify_ssl=bool(body.get("verifySsl", not body.get("allowInsecureSsl", False))),
+        secret=body.get("secret") or None,
+        enabled=bool(body.get("enabled", True)),
+    )
     if webhook.jql_filter:
         from jira_emulator.jql.parser import parse_jql
+
         parse_jql(webhook.jql_filter)
     db.add(webhook)
     await db.flush()
@@ -153,11 +219,20 @@ async def create_dynamic(db: AsyncSession, body: dict, owner_id: int) -> list[di
     entries = body.get("webhooks")
     if not isinstance(entries, list) or not entries:
         raise ValueError("webhooks must be a non-empty array")
-    count = (await db.execute(select(Webhook).where(Webhook.kind == "dynamic", Webhook.owner_user_id == owner_id,
-                                                      Webhook.enabled.is_(True)))).scalars().all()
-    results = []
+    count = list(
+        (
+            await db.execute(
+                select(Webhook).where(
+                    Webhook.kind == "dynamic", Webhook.owner_user_id == owner_id, Webhook.enabled.is_(True)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    results: list[dict[str, object]] = []
     for item in entries:
-        errors = []
+        errors: list[str] = []
         events = list(dict.fromkeys(item.get("events") or []))
         errors.extend(f"Unsupported event {event}" for event in events if event not in DYNAMIC_EVENTS)
         if not events:
@@ -166,6 +241,7 @@ async def create_dynamic(db: AsyncSession, body: dict, owner_id: int) -> list[di
         if jql:
             try:
                 from jira_emulator.jql.parser import parse_jql
+
                 parse_jql(jql)
             except Exception as exc:
                 errors.append(str(exc))
@@ -174,10 +250,16 @@ async def create_dynamic(db: AsyncSession, body: dict, owner_id: int) -> list[di
         if errors:
             results.append({"errors": errors})
             continue
-        webhook = Webhook(kind="dynamic", owner_user_id=owner_id, url=url, events=_dump(events) or "[]",
-                          jql_filter=jql, field_ids_filter=_dump(item.get("fieldIdsFilter")),
-                          issue_property_keys_filter=_dump(item.get("issuePropertyKeysFilter")),
-                          expires_at=datetime.utcnow() + timedelta(days=30))
+        webhook = Webhook(
+            kind="dynamic",
+            owner_user_id=owner_id,
+            url=url,
+            events=_dump(events) or "[]",
+            jql_filter=jql,
+            field_ids_filter=_dump(item.get("fieldIdsFilter")),
+            issue_property_keys_filter=_dump(item.get("issuePropertyKeysFilter")),
+            expires_at=datetime.utcnow() + timedelta(days=30),
+        )
         db.add(webhook)
         await db.flush()
         count.append(webhook)
@@ -185,29 +267,44 @@ async def create_dynamic(db: AsyncSession, body: dict, owner_id: int) -> list[di
     return results
 
 
-async def enqueue_event(db: AsyncSession, event: str, payload: dict, *, project_id: int | None = None,
-                        issue_fields: dict | None = None, changed_fields: set[str] | None = None,
-                        property_key: str | None = None, trace: str | None = None) -> int:
+async def enqueue_event(
+    db: AsyncSession,
+    event: str,
+    payload: dict,
+    *,
+    project_id: int | None = None,
+    issue_fields: dict | None = None,
+    changed_fields: set[str] | None = None,
+    property_key: str | None = None,
+    trace: str | None = None,
+) -> int:
     if not get_settings().WEBHOOKS_ENABLED:
         return 0
     now = datetime.utcnow()
-    registrations = (await db.execute(select(Webhook).where(Webhook.enabled.is_(True), Webhook.events.contains(event)))).scalars().all()
+    registrations = (
+        (await db.execute(select(Webhook).where(Webhook.enabled.is_(True), Webhook.events.contains(event))))
+        .scalars()
+        .all()
+    )
     grouped: dict[tuple[int | None, str, str], list[int]] = {}
     for webhook in registrations:
         if webhook.expires_at and webhook.expires_at < now:
             continue
         if webhook.project_id is not None and webhook.project_id != project_id:
             continue
-        if webhook.jql_filter and issue_fields is not None:
-            if not _jql_matches(webhook.jql_filter, issue_fields):
-                continue
+        if webhook.jql_filter and issue_fields is not None and not _jql_matches(webhook.jql_filter, issue_fields):
+            continue
         fields = _json(webhook.field_ids_filter, []) or []
         if fields and not (set(fields) & (changed_fields or set())):
             continue
         keys = _json(webhook.issue_property_keys_filter, []) or []
         if keys and property_key not in keys:
             continue
-        key = (webhook.owner_user_id if webhook.kind == "dynamic" else webhook.id, webhook.url, "dynamic" if webhook.kind == "dynamic" else str(webhook.id))
+        key = (
+            webhook.owner_user_id if webhook.kind == "dynamic" else webhook.id,
+            webhook.url,
+            "dynamic" if webhook.kind == "dynamic" else str(webhook.id),
+        )
         grouped.setdefault(key, []).append(webhook.id)
     created = 0
     for _key, ids in grouped.items():
@@ -219,10 +316,17 @@ async def enqueue_event(db: AsyncSession, event: str, payload: dict, *, project_
         if first.kind == "dynamic":
             body["matchedWebhookIds"] = sorted(ids)
         serialized = "" if first.exclude_body else json.dumps(body, separators=(",", ":"), default=str)
-        outbox = WebhookOutbox(id=str(uuid.uuid4()), webhook_id=first.id, owner_user_id=first.owner_user_id,
-                               url=url, event=event, payload=serialized, secret=first.secret,
-                               verify_ssl=first.verify_ssl,
-                               next_attempt_at=now)
+        outbox = WebhookOutbox(
+            id=str(uuid.uuid4()),
+            webhook_id=first.id,
+            owner_user_id=first.owner_user_id,
+            url=url,
+            event=event,
+            payload=serialized,
+            secret=first.secret,
+            verify_ssl=first.verify_ssl,
+            next_attempt_at=now,
+        )
         db.add(outbox)
         created += 1
     return created
@@ -234,8 +338,12 @@ def signature(secret: str, body: bytes) -> str:
 
 async def deliver_once(row: WebhookOutbox) -> tuple[bool, int | None, str | None]:
     body = row.payload.encode()
-    headers = {"Content-Type": "application/json", "User-Agent": "jira-emulator/0.1.0",
-               "X-Atlassian-Webhook-Identifier": row.id, "X-Atlassian-Webhook-Flow": row.flow}
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "jira-emulator/0.1.0",
+        "X-Atlassian-Webhook-Identifier": row.id,
+        "X-Atlassian-Webhook-Flow": row.flow,
+    }
     if row.attempt_count:
         headers["X-Atlassian-Webhook-Retry"] = str(row.attempt_count)
     if row.secret:
@@ -260,8 +368,18 @@ async def deliver_once(row: WebhookOutbox) -> tuple[bool, int | None, str | None
 
 
 async def claim_due(db: AsyncSession, limit: int = 20) -> list[WebhookOutbox]:
-    rows = (await db.execute(select(WebhookOutbox).where(WebhookOutbox.state == "pending",
-        WebhookOutbox.next_attempt_at <= datetime.utcnow()).order_by(WebhookOutbox.next_attempt_at).limit(limit))).scalars().all()
+    rows = list(
+        (
+            await db.execute(
+                select(WebhookOutbox)
+                .where(WebhookOutbox.state == "pending", WebhookOutbox.next_attempt_at <= datetime.utcnow())
+                .order_by(WebhookOutbox.next_attempt_at)
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
     for row in rows:
         row.state = "delivering"
         row.attempt_count += 1
