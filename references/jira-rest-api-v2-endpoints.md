@@ -75,6 +75,12 @@ Collected from Atlassian developer documentation, March 2026.
 | GET | `/rest/api/2/user?username={username}` | Get user |
 | GET | `/rest/api/2/user/assignable/search?project={key}` | Get assignable users |
 
+### Server Info
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/rest/api/2/serverInfo` | Server information (connectivity/capability check) |
+
 ### Priorities, Statuses, Resolutions, Issue Types
 
 | Method | Path | Description |

@@ -196,6 +196,7 @@ All endpoints below are available under both `/rest/api/2/` and `/rest/api/3/`. 
 | `/rest/api/2/project` | GET | List projects |
 | `/rest/api/2/project/{id}` | GET | Get project |
 | `/rest/api/2/field` | GET | List fields |
+| `/rest/api/2/serverInfo` | GET | Server information (connectivity/capability check) |
 | `/rest/api/2/priority` | GET | List priorities |
 | `/rest/api/2/status` | GET | List statuses |
 | `/rest/api/2/resolution` | GET | List resolutions |

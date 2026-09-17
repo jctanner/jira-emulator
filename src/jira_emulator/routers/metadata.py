@@ -15,6 +15,10 @@ from jira_emulator.models.user import User
 
 router = APIRouter(prefix="/rest/api/2")
 
+# Fake Jira Cloud-style domain used for serverInfo identity fields. This is
+# emulator-appropriate and must never reflect a real Atlassian/Red Hat host.
+SERVER_INFO_BASE_URL = "https://jira-emulator.atlassian.net"
+
 
 def _status_category_for(category: str) -> dict:
     """Map a status category string to a Jira StatusCategory dict."""
@@ -24,6 +28,30 @@ def _status_category_for(category: str) -> dict:
         "done": {"self": "", "id": "3", "key": "done", "colorName": "green", "name": "Done"},
     }
     return categories.get(category, categories["indeterminate"])
+
+
+@router.get("/serverInfo")
+async def get_server_info(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    """Return Jira-compatible server information for connectivity/capability checks."""
+    return {
+        "baseUrl": SERVER_INFO_BASE_URL,
+        "displayUrl": SERVER_INFO_BASE_URL,
+        "displayUrlServicedeskHelpCenter": SERVER_INFO_BASE_URL,
+        "displayUrlCSMHelpSeeker": SERVER_INFO_BASE_URL,
+        "displayUrlConfluence": SERVER_INFO_BASE_URL,
+        "version": "1000.0.0",
+        "versionNumbers": [1000, 0, 0],
+        "deploymentType": "Cloud",
+        "buildNumber": 100000,
+        "buildDate": "2026-01-01T00:00:00.000+0000",
+        "scmInfo": "0" * 40,
+        "serverTitle": "Jira Emulator",
+        "defaultLocale": {"locale": "en_US"},
+        "serverTimeZone": "Etc/UTC",
+    }
 
 
 @router.get("/priority")

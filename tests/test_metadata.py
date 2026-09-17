@@ -2,7 +2,84 @@
 
 import httpx
 
+from jira_emulator.config import get_settings
 from tests.conftest import AUTH_HEADER
+
+EXPECTED_SERVER_INFO_KEYS = {
+    "baseUrl",
+    "displayUrl",
+    "displayUrlServicedeskHelpCenter",
+    "displayUrlCSMHelpSeeker",
+    "displayUrlConfluence",
+    "version",
+    "versionNumbers",
+    "deploymentType",
+    "buildNumber",
+    "buildDate",
+    "scmInfo",
+    "serverTitle",
+    "defaultLocale",
+    "serverTimeZone",
+}
+
+
+def _assert_server_info_shape(data: dict) -> None:
+    assert data.keys() >= EXPECTED_SERVER_INFO_KEYS
+    assert data["defaultLocale"] == {"locale": "en_US"}
+    assert isinstance(data["versionNumbers"], list)
+
+    # The emulator must never report a real Atlassian/Red Hat domain.
+    for url_field in (
+        "baseUrl",
+        "displayUrl",
+        "displayUrlServicedeskHelpCenter",
+        "displayUrlCSMHelpSeeker",
+        "displayUrlConfluence",
+    ):
+        assert "redhat" not in data[url_field].lower()
+        assert data[url_field] == "https://jira-emulator.atlassian.net"
+
+
+async def test_server_info_v2_authenticated(client: httpx.AsyncClient):
+    """GET /rest/api/2/serverInfo should return a Jira-compatible payload."""
+    resp = await client.get("/rest/api/2/serverInfo", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    _assert_server_info_shape(resp.json())
+
+
+async def test_server_info_v3_authenticated(client: httpx.AsyncClient):
+    """GET /rest/api/3/serverInfo should follow the v2 -> v3 compatibility rewrite."""
+    resp = await client.get("/rest/api/3/serverInfo", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    _assert_server_info_shape(resp.json())
+
+
+async def test_server_info_unauthenticated_permissive_mode(client: httpx.AsyncClient):
+    """In permissive auth mode, serverInfo should succeed without credentials."""
+    resp = await client.get("/rest/api/2/serverInfo")
+    assert resp.status_code == 200
+    _assert_server_info_shape(resp.json())
+
+    resp_v3 = await client.get("/rest/api/3/serverInfo")
+    assert resp_v3.status_code == 200
+    _assert_server_info_shape(resp_v3.json())
+
+
+async def test_server_info_unauthenticated_strict_mode(client: httpx.AsyncClient):
+    """In strict auth mode, serverInfo should require credentials like other endpoints."""
+    get_settings().AUTH_MODE = "strict"
+    try:
+        resp = await client.get("/rest/api/2/serverInfo")
+        assert resp.status_code == 401
+
+        resp_v3 = await client.get("/rest/api/3/serverInfo")
+        assert resp_v3.status_code == 401
+
+        authed_resp = await client.get("/rest/api/2/serverInfo", headers=AUTH_HEADER)
+        assert authed_resp.status_code == 200
+        _assert_server_info_shape(authed_resp.json())
+    finally:
+        get_settings().AUTH_MODE = "permissive"
 
 
 async def test_list_priorities_returns_six(client: httpx.AsyncClient):
