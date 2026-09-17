@@ -1,6 +1,6 @@
 """Async SQLAlchemy engine and session management for SQLite."""
 
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -64,6 +64,21 @@ async def init_db(engine=None):
     e = engine or get_engine()
     async with e.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # ``create_all`` does not alter tables that predate a model change.
+        # Keep the emulator's lightweight SQLite deployment upgradeable without
+        # requiring a separate migration runner.
+        for table, column in (("webhooks", "verify_ssl"), ("webhook_outbox", "verify_ssl")):
+            exists = await conn.execute(
+                text("SELECT 1 FROM sqlite_master WHERE type='table' AND name=:table"), {"table": table}
+            )
+            if exists.scalar_one_or_none() is None:
+                continue
+            columns = await conn.execute(text(f"PRAGMA table_info({table})"))
+            names = {row[1] for row in columns.fetchall()}
+            if column not in names:
+                await conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN {column} BOOLEAN NOT NULL DEFAULT 1")
+                )
 
 
 def reset_engine():

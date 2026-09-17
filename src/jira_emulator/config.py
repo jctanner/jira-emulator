@@ -27,6 +27,14 @@ class Settings(BaseSettings):
         ge=0,
         description="Maximum logical description characters after ADF normalization.",
     )
+    WEBHOOKS_ENABLED: bool = True
+    WEBHOOK_ALLOW_INSECURE_HTTP: bool = False
+    WEBHOOK_ALLOW_PRIVATE_NETWORKS: bool = False
+    WEBHOOK_WORKER_POLL_SECONDS: float = 1.0
+    WEBHOOK_MAX_CONCURRENCY: int = 20
+    WEBHOOK_CONNECT_TIMEOUT_SECONDS: float = 10.0
+    WEBHOOK_TOTAL_TIMEOUT_SECONDS: float = 30.0
+    WEBHOOK_SECRET_KEY: str | None = None
 
     model_config = {"env_prefix": "", "case_sensitive": True}
 

@@ -84,6 +84,49 @@
 </div>
 
 <div class="card">
+    <h2>Project Webhooks</h2>
+    {% if webhook_message %}<div class="result-banner result-banner-success">{{ webhook_message }}</div>{% endif %}
+    {% if webhook_error %}<div class="result-banner result-banner-error">{{ webhook_error }}</div>{% endif %}
+    <p style="color: var(--ds-text-subtle); margin-bottom: var(--ds-space-200);">
+        Send issue and project changes to an HTTPS callback. Secrets are used for HMAC signing and are never displayed.
+    </p>
+    <form method="post" action="/admin/webhooks" style="display: grid; gap: var(--ds-space-100); margin-bottom: var(--ds-space-300);">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--ds-space-100); align-items: end;">
+            <div class="form-field" style="margin-bottom: 0;">
+                <label>Project</label>
+                <select name="project_id" required style="width: 100%;">
+                    {% for project in projects %}<option value="{{ project.id }}">{{ project.key }} — {{ project.name }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="form-field" style="margin-bottom: 0;"><label>Name</label><input type="text" name="name" required placeholder="Project webhook" style="width: 100%;"></div>
+            <div class="form-field" style="margin-bottom: 0;"><label>Callback URL</label><input type="url" name="url" required placeholder="https://example.test/hook" style="width: 100%;"></div>
+            <div class="form-field" style="margin-bottom: 0;"><label>Signing secret (optional)</label><input type="password" name="secret" autocomplete="new-password" style="width: 100%;"></div>
+        </div>
+        <div>
+            <label style="margin-right: var(--ds-space-150);"><input type="checkbox" name="events" value="jira:issue_created" checked> Issue created</label>
+            <label style="margin-right: var(--ds-space-150);"><input type="checkbox" name="events" value="jira:issue_updated" checked> Issue updated</label>
+            <label style="margin-right: var(--ds-space-150);"><input type="checkbox" name="events" value="jira:issue_deleted"> Issue deleted</label>
+            <label style="margin-right: var(--ds-space-150);"><input type="checkbox" name="events" value="comment_created"> Comment created</label>
+            <label style="margin-right: var(--ds-space-150);"><input type="checkbox" name="events" value="attachment_created"> Attachment created</label>
+            <label style="margin-right: var(--ds-space-150);"><input type="checkbox" name="events" value="issuelink_created"> Link created</label>
+            <label style="margin-right: var(--ds-space-150);"><input type="checkbox" name="allow_insecure_ssl" value="true"> Allow self-signed TLS certificates</label>
+            <label><input type="checkbox" name="enabled" value="true" checked> Enabled</label>
+        </div>
+        <div><button type="submit" class="btn btn-primary">Add webhook</button></div>
+    </form>
+    {% if webhooks %}
+    <table><thead><tr><th>Project</th><th>Name</th><th>URL</th><th>Events</th><th>Status</th><th></th></tr></thead><tbody>
+        {% for webhook in webhooks %}<tr>
+            <td>{% for project in projects %}{% if project.id == webhook.project_id %}{{ project.key }}{% endif %}{% endfor %}</td>
+            <td>{{ webhook.name }}</td><td style="word-break: break-all;">{{ webhook.url }}</td><td>{{ webhook.events | join(', ') }}</td>
+            <td>{{ 'Enabled' if webhook.enabled else 'Disabled' }}{% if webhook.signed %}, signed{% endif %}{% if not webhook.verify_ssl %}, TLS verification off{% endif %}</td>
+            <td><form method="post" action="/admin/webhooks/{{ webhook.id }}/delete" onsubmit="return confirm('Delete this webhook?');"><button class="btn" type="submit">Delete</button></form></td>
+        </tr>{% endfor %}
+    </tbody></table>
+    {% else %}<p style="color: var(--ds-text-subtlest); font-style: italic;">No webhooks configured.</p>{% endif %}
+</div>
+
+<div class="card">
     <h2>User Management</h2>
     <p style="color: var(--ds-text-subtle); margin-bottom: var(--ds-space-200);">
         {{ users | length }} user{{ '' if users | length == 1 else 's' }}. Credential details show status only; stored secrets are not displayed.

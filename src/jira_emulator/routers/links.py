@@ -1,6 +1,7 @@
 """Issue link endpoints: /rest/api/2/issueLink and /rest/api/2/issueLinkType."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +11,7 @@ from jira_emulator.database import get_db
 from jira_emulator.models.link import IssueLink, IssueLinkType
 from jira_emulator.models.user import User
 from jira_emulator.services import issue_service
+from jira_emulator.services.webhook_service import enqueue_event
 
 router = APIRouter(prefix="/rest/api/2")
 
@@ -96,6 +98,11 @@ async def create_issue_link(
     )
     db.add(link)
     await db.flush()
+    await enqueue_event(db, "issuelink_created", {"timestamp": int(datetime.utcnow().timestamp() * 1000), "webhookEvent": "issuelink_created",
+        "issueLink": {"id": str(link.id), "type": {"name": link_type.name},
+                       "inwardIssue": {"key": inward_issue.key}, "outwardIssue": {"key": outward_issue.key}},
+        "urlContext": {"sourceIssue.key": inward_issue.key, "destinationIssue.key": outward_issue.key}},
+        project_id=inward_issue.project_id, issue_fields={"issueKey": inward_issue.key})
 
     return Response(status_code=201)
 
@@ -117,6 +124,8 @@ async def delete_issue_link(
 
     await db.delete(link)
     await db.flush()
+    await enqueue_event(db, "issuelink_deleted", {"timestamp": int(datetime.utcnow().timestamp() * 1000), "webhookEvent": "issuelink_deleted",
+        "issueLink": {"id": str(link.id)}, "urlContext": {}}, project_id=None)
 
     return Response(status_code=204)
 

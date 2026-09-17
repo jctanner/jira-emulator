@@ -20,4 +20,5 @@ from jira_emulator.models.status import Status  # noqa: F401
 from jira_emulator.models.user import User  # noqa: F401
 from jira_emulator.models.version import IssueAffectsVersion, IssueFixVersion, Version  # noqa: F401
 from jira_emulator.models.watcher import Watcher  # noqa: F401
+from jira_emulator.models.webhook import Webhook, WebhookOutbox  # noqa: F401
 from jira_emulator.models.workflow import Workflow, WorkflowTransition  # noqa: F401

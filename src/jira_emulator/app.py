@@ -81,7 +81,56 @@ async def lifespan(app: FastAPI):
         else:
             logger.warning(f"IMPORT_DIR '{import_dir}' does not exist, skipping startup import")
 
-    yield
+    worker_task = None
+    # In-memory SQLite uses one shared connection; a background session would
+    # contend with request sessions and make tests/non-server embeds unsafe.
+    if settings.WEBHOOKS_ENABLED and settings.DATABASE_URL != "sqlite+aiosqlite://":
+        import asyncio
+        from jira_emulator.services.webhook_service import claim_due, deliver_once
+        from jira_emulator.models.webhook import WebhookOutbox
+        from datetime import datetime, timedelta
+
+        async def worker():
+            while True:
+                factory = get_session_factory()
+                async with factory() as db:
+                    stale = (await db.execute(__import__("sqlalchemy").select(WebhookOutbox).where(
+                        WebhookOutbox.state == "delivering"))).scalars().all()
+                    for row in stale:
+                        row.state = "pending"
+                        row.next_attempt_at = datetime.utcnow()
+                    await db.commit()
+                    rows = await claim_due(db)
+                for row in rows:
+                    ok, status, error = await deliver_once(row)
+                    async with factory() as db:
+                        fresh = await db.get(WebhookOutbox, row.id)
+                        if fresh is None:
+                            continue
+                        fresh.last_status = status
+                        fresh.last_error = error
+                        if ok:
+                            fresh.state = "delivered"
+                            fresh.delivered_at = datetime.utcnow()
+                        elif fresh.attempt_count >= 6 or (status is not None and status < 500 and status not in {408, 409, 425, 429}):
+                            fresh.state = "failed"
+                            fresh.failed_at = datetime.utcnow()
+                        else:
+                            fresh.state = "pending"
+                            fresh.next_attempt_at = datetime.utcnow() + timedelta(seconds=min(900, 2 ** fresh.attempt_count))
+                        await db.commit()
+                await asyncio.sleep(settings.WEBHOOK_WORKER_POLL_SECONDS)
+
+        worker_task = asyncio.create_task(worker())
+    try:
+        yield
+    finally:
+        if worker_task:
+            worker_task.cancel()
+            try:
+                await worker_task
+            except asyncio.CancelledError:
+                pass
 
 
 def create_app() -> FastAPI:
@@ -147,6 +196,7 @@ def create_app() -> FastAPI:
         search,
         tokens,
         users,
+        webhooks,
     )
 
     app.include_router(auth.router)
@@ -162,6 +212,8 @@ def create_app() -> FastAPI:
     app.include_router(remote_links.router)
     app.include_router(issue_properties.router)
     app.include_router(admin.router)
+    app.include_router(webhooks.api_router)
+    app.include_router(webhooks.admin_router)
 
     # Web UI router
     from jira_emulator.web.routes import router as web_router

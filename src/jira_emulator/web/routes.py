@@ -27,7 +27,8 @@ from jira_emulator.models.priority import Priority
 from jira_emulator.models.project import Project
 from jira_emulator.models.status import Status
 from jira_emulator.models.user import User
-from jira_emulator.services import history_service, issue_service, search_service, user_service
+from jira_emulator.models.webhook import Webhook
+from jira_emulator.services import history_service, issue_service, search_service, user_service, webhook_service
 from jira_emulator.services.project_admin_service import create_project, delete_project
 from jira_emulator.services.snapshot_service import (
     create_snapshot,
@@ -80,6 +81,9 @@ async def _admin_template_context(request: Request, db: AsyncSession, **extra):
         active_token_count.label("active_token_count"),
     ).order_by(func.lower(User.username), User.username)
     user_rows = (await db.execute(user_stmt)).all()
+    webhook_rows = (
+        await db.execute(select(Webhook).where(Webhook.kind == "admin").order_by(Webhook.id))
+    ).scalars().all()
 
     context = {
         "version": __version__,
@@ -113,6 +117,16 @@ async def _admin_template_context(request: Request, db: AsyncSession, **extra):
         "project_error": request.query_params.get("project_error"),
         "user_message": request.query_params.get("user_message"),
         "user_error": request.query_params.get("user_error"),
+        "webhook_message": request.query_params.get("webhook_message"),
+        "webhook_error": request.query_params.get("webhook_error"),
+        "webhooks": [
+            {
+                "id": row.id, "project_id": row.project_id, "name": row.name, "url": row.url,
+                "events": json.loads(row.events), "enabled": row.enabled, "signed": row.secret is not None,
+                "verify_ssl": row.verify_ssl,
+            }
+            for row in webhook_rows
+        ],
     }
     context.update(extra)
     return context
@@ -605,6 +619,46 @@ async def admin_project_delete(
     else:
         detail = f" Deleted {result.issues_deleted} issue{'s' if result.issues_deleted != 1 else ''}."
         query = urlencode({"project_message": f"Project {result.project.key} deleted.{detail}"})
+    return RedirectResponse(url=f"/admin/import?{query}", status_code=303)
+
+
+@router.post("/admin/webhooks")
+async def admin_webhook_create(
+    db: AsyncSession = Depends(get_db),
+    project_id: int = Form(...),
+    name: str = Form(...),
+    url: str = Form(...),
+    secret: str = Form(""),
+    allow_insecure_ssl: bool = Form(False),
+    enabled: bool = Form(False),
+    events: list[str] = Form(...),
+):
+    project = await db.get(Project, project_id)
+    if project is None:
+        query = urlencode({"webhook_error": "Project not found."})
+    else:
+        try:
+            await webhook_service.create_admin(
+                db,
+                {"name": name, "url": url, "events": events, "secret": secret, "enabled": enabled,
+                 "allowInsecureSsl": allow_insecure_ssl,
+                 "filters": {"issue-related-events-section": f'project = "{project.key}"'}},
+                project_id=project.id,
+            )
+            query = urlencode({"webhook_message": f"Webhook for {project.key} created."})
+        except ValueError as exc:
+            query = urlencode({"webhook_error": str(exc)})
+    return RedirectResponse(url=f"/admin/import?{query}", status_code=303)
+
+
+@router.post("/admin/webhooks/{webhook_id}/delete")
+async def admin_webhook_delete(webhook_id: int, db: AsyncSession = Depends(get_db)):
+    row = await db.get(Webhook, webhook_id)
+    if row is None or row.kind != "admin":
+        query = urlencode({"webhook_error": "Webhook not found."})
+    else:
+        await db.delete(row)
+        query = urlencode({"webhook_message": "Webhook deleted."})
     return RedirectResponse(url=f"/admin/import?{query}", status_code=303)
 
 
