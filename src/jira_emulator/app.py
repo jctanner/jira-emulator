@@ -1,5 +1,6 @@
 """FastAPI application factory."""
 
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -82,10 +83,11 @@ async def lifespan(app: FastAPI):
             logger.warning(f"IMPORT_DIR '{import_dir}' does not exist, skipping startup import")
 
     worker_task = None
+    database_lock = asyncio.Lock()
+    app.state.database_operation_lock = database_lock
     # In-memory SQLite uses one shared connection; a background session would
     # contend with request sessions and make tests/non-server embeds unsafe.
     if settings.WEBHOOKS_ENABLED and settings.DATABASE_URL != "sqlite+aiosqlite://":
-        import asyncio
         from datetime import datetime, timedelta
 
         from jira_emulator.models.webhook import WebhookOutbox
@@ -93,46 +95,47 @@ async def lifespan(app: FastAPI):
 
         async def worker():
             while True:
-                factory = get_session_factory()
-                async with factory() as db:
-                    stale = (
-                        (
-                            await db.execute(
-                                __import__("sqlalchemy")
-                                .select(WebhookOutbox)
-                                .where(WebhookOutbox.state == "delivering")
-                            )
-                        )
-                        .scalars()
-                        .all()
-                    )
-                    for row in stale:
-                        row.state = "pending"
-                        row.next_attempt_at = datetime.utcnow()
-                    await db.commit()
-                    rows = await claim_due(db)
-                for row in rows:
-                    ok, status, error = await deliver_once(row)
+                async with database_lock:
+                    factory = get_session_factory()
                     async with factory() as db:
-                        fresh = await db.get(WebhookOutbox, row.id)
-                        if fresh is None:
-                            continue
-                        fresh.last_status = status
-                        fresh.last_error = error
-                        if ok:
-                            fresh.state = "delivered"
-                            fresh.delivered_at = datetime.utcnow()
-                        elif fresh.attempt_count >= 6 or (
-                            status is not None and status < 500 and status not in {408, 409, 425, 429}
-                        ):
-                            fresh.state = "failed"
-                            fresh.failed_at = datetime.utcnow()
-                        else:
-                            fresh.state = "pending"
-                            fresh.next_attempt_at = datetime.utcnow() + timedelta(
-                                seconds=min(900, 2**fresh.attempt_count)
+                        stale = (
+                            (
+                                await db.execute(
+                                    __import__("sqlalchemy")
+                                    .select(WebhookOutbox)
+                                    .where(WebhookOutbox.state == "delivering")
+                                )
                             )
+                            .scalars()
+                            .all()
+                        )
+                        for row in stale:
+                            row.state = "pending"
+                            row.next_attempt_at = datetime.utcnow()
                         await db.commit()
+                        rows = await claim_due(db)
+                    for row in rows:
+                        ok, status, error = await deliver_once(row)
+                        async with factory() as db:
+                            fresh = await db.get(WebhookOutbox, row.id)
+                            if fresh is None:
+                                continue
+                            fresh.last_status = status
+                            fresh.last_error = error
+                            if ok:
+                                fresh.state = "delivered"
+                                fresh.delivered_at = datetime.utcnow()
+                            elif fresh.attempt_count >= 6 or (
+                                status is not None and status < 500 and status not in {408, 409, 425, 429}
+                            ):
+                                fresh.state = "failed"
+                                fresh.failed_at = datetime.utcnow()
+                            else:
+                                fresh.state = "pending"
+                                fresh.next_attempt_at = datetime.utcnow() + timedelta(
+                                    seconds=min(900, 2**fresh.attempt_count)
+                                )
+                            await db.commit()
                 await asyncio.sleep(settings.WEBHOOK_WORKER_POLL_SECONDS)
 
         worker_task = asyncio.create_task(worker())

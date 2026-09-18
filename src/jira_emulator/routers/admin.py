@@ -4,7 +4,7 @@ import json
 import os
 import tempfile
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -202,17 +202,19 @@ async def delete_admin_project(
 
 @router.post("/reset")
 async def reset_database(
+    request: Request,
     current_user: User = Depends(get_current_user),
 ):
     """Reset the database: drop all tables, recreate, and reseed."""
-    engine = get_engine()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+    async with request.app.state.database_operation_lock:
+        engine = get_engine()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
 
-    factory = get_session_factory()
-    async with factory() as session:
-        await load_seed_data(session)
+        factory = get_session_factory()
+        async with factory() as session:
+            await load_seed_data(session)
 
     return {"message": "Database reset successfully"}
 
