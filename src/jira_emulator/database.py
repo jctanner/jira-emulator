@@ -1,5 +1,9 @@
 """Async SQLAlchemy engine and session management for SQLite."""
 
+import asyncio
+import weakref
+
+from fastapi import Request
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -18,6 +22,7 @@ def _set_sqlite_pragmas(dbapi_conn, connection_record):
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA busy_timeout=5000")
     cursor.close()
 
 
@@ -31,6 +36,17 @@ def create_engine(database_url: str | None = None):
 
 _engine = None
 _session_factory = None
+_database_locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = weakref.WeakKeyDictionary()
+
+
+def get_database_lock() -> asyncio.Lock:
+    """Return the database-operation lock for the current event loop."""
+    loop = asyncio.get_running_loop()
+    lock = _database_locks.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _database_locks[loop] = lock
+    return lock
 
 
 def get_engine():
@@ -47,7 +63,7 @@ def get_session_factory():
     return _session_factory
 
 
-async def get_db():
+async def get_db(request: Request):
     """FastAPI dependency that yields an async database session."""
     factory = get_session_factory()
     async with factory() as session:

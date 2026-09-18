@@ -12,7 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from jira_emulator import __version__
 from jira_emulator.config import get_settings
-from jira_emulator.database import get_session_factory, init_db
+from jira_emulator.database import get_database_lock, get_session_factory, init_db
 from jira_emulator.exceptions import (
     DescriptionContentLimitExceededError,
     InvalidTransitionError,
@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
             logger.warning(f"IMPORT_DIR '{import_dir}' does not exist, skipping startup import")
 
     worker_task = None
-    database_lock = asyncio.Lock()
+    database_lock = get_database_lock()
     app.state.database_operation_lock = database_lock
     # In-memory SQLite uses one shared connection; a background session would
     # contend with request sessions and make tests/non-server embeds unsafe.
@@ -180,6 +180,15 @@ def create_app() -> FastAPI:
             return await call_next(request)
 
     app.add_middleware(ApiVersionRewriteMiddleware)
+
+    class DatabaseOperationMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            if request.url.path == "/api/admin/reset":
+                return await call_next(request)
+            async with app.state.database_operation_lock:
+                return await call_next(request)
+
+    app.add_middleware(DatabaseOperationMiddleware)
 
     # Request logging
     class RequestLoggingMiddleware(BaseHTTPMiddleware):
