@@ -9,7 +9,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from jira_emulator.auth.middleware import get_current_user
+from jira_emulator.auth.middleware import _permissive_auth, _strict_auth, get_current_user
+from jira_emulator.config import get_settings
 from jira_emulator.database import Base, get_db, get_engine, get_session_factory
 from jira_emulator.models.user import User
 from jira_emulator.schemas.admin import ImportRequest, ImportResponse
@@ -26,6 +27,26 @@ from jira_emulator.services.snapshot_service import (
 )
 
 router = APIRouter(prefix="/api/admin")
+
+
+async def _authenticate_reset_request(request: Request) -> User:
+    """Authenticate reset before opening the destructive-operation lock."""
+    settings = get_settings()
+    factory = get_session_factory()
+    async with factory() as db:
+        if settings.AUTH_MODE == "none":
+            from jira_emulator.services.user_service import get_or_create_user, get_user_by_username
+
+            user = await get_user_by_username(db, settings.DEFAULT_USER)
+            if user is None:
+                user = await get_or_create_user(db, "Admin User", settings.DEFAULT_USER)
+            request.state.user = user
+        elif settings.AUTH_MODE == "strict":
+            user = await _strict_auth(request, db, request.headers.get("Authorization", ""), settings)
+        else:
+            user = await _permissive_auth(request, db, request.headers.get("Authorization", ""), settings)
+        await db.commit()
+        return user
 
 
 class AdminProjectCreateBody(BaseModel):
@@ -203,7 +224,7 @@ async def delete_admin_project(
 @router.post("/reset")
 async def reset_database(
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_authenticate_reset_request),
 ):
     """Reset the database: drop all tables, recreate, and reseed."""
     async with request.app.state.database_operation_lock:
