@@ -10,6 +10,8 @@ Supports:
 - ORDER BY with multiple fields and ASC/DESC
 - Quoted strings, unquoted identifiers (including dotted like RHAIRFE-123),
   numbers (int/float), EMPTY, NULL
+- Relative dates: -26w, +3d, 2h, unquoted (quoted forms such as "-1w 2d"
+  arrive as strings and are interpreted when compared with a date field)
 - Value lists: (val1, val2, ...)
 - Function calls: functionName() or functionName(arg1, arg2)
 - Field names: alphanumeric with dots/underscores, cf[12345], quoted names
@@ -58,6 +60,7 @@ JQL_GRAMMAR = r"""
     ?value: function_call
           | DOUBLE_QUOTED_STRING  -> quoted_string
           | SINGLE_QUOTED_STRING  -> quoted_string
+          | RELATIVE_DATE         -> relative_date
           | SIGNED_NUMBER         -> number_value
           | EMPTY_KW              -> empty_value
           | NULL_KW               -> null_value
@@ -134,6 +137,11 @@ JQL_GRAMMAR = r"""
     // Unquoted value: identifiers that may include letters, digits, hyphens,
     // dots, underscores — broad enough to match project keys like RHAIRFE-123
     UNQUOTED_VALUE: /[a-zA-Z0-9][a-zA-Z0-9._\-]*/
+
+    // Relative date: a signed count and a unit (s, m, h, d, w, M, y), as in
+    // "created >= -26w". Longer than the number it starts with, so the lexer
+    // prefers it there; the priority settles "2w" against UNQUOTED_VALUE.
+    RELATIVE_DATE.2: /[+-]?\d+[smhdwMy](?![a-zA-Z0-9_.\-])/
 
     SIGNED_NUMBER: /[+-]?\d+(\.\d+)?/
 

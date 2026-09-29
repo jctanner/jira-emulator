@@ -169,6 +169,22 @@ def _end_of_year(offset: str | None = None) -> datetime:
 # ---------------------------------------------------------------------------
 
 _OFFSET_RE = re.compile(r"^([+-]?\d+)\s*([dwMyhms])$")
+_RELATIVE_DATE_RE = re.compile(r"^[+-]?\d+\s*[dwMyhms](\s+[+-]?\d+\s*[dwMyhms])*$")
+
+
+def is_relative_date(text: object) -> bool:
+    """Whether *text* is a JQL relative date such as ``-26w`` or ``"-1w 2d"``."""
+    return isinstance(text, str) and bool(_RELATIVE_DATE_RE.match(text.strip().strip("'\"")))
+
+
+def relative_date_to_datetime(text: str, now: datetime | None = None) -> datetime:
+    """``now`` shifted by a relative date. Jira sums the parts of a
+    multi-part value, so ``"-1w 2d"`` is one week back and two days on."""
+    base = now or datetime.utcnow()
+    cleaned = str(text).strip().strip("'\"")
+    if not _RELATIVE_DATE_RE.match(cleaned):
+        raise ValueError(f"Invalid relative date: '{text}'. Expected a value like '-26w', '+3d' or '-1w 2d'.")
+    return base + sum((_parse_offset(part) for part in cleaned.split()), timedelta())
 
 
 def _parse_offset(offset_str: str) -> timedelta:

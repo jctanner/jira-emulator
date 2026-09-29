@@ -12,13 +12,14 @@ Usage::
 from __future__ import annotations
 
 import re
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import lark
 from sqlalchemy import and_, exists, not_, or_, select
 from sqlalchemy.sql import func
 
-from jira_emulator.jql.functions import resolve_function
+from jira_emulator.jql.functions import is_relative_date, relative_date_to_datetime, resolve_function
 from jira_emulator.models.comment import Comment
 from jira_emulator.models.component import Component, IssueComponent
 from jira_emulator.models.custom_field import CustomField, IssueCustomFieldValue
@@ -240,6 +241,10 @@ class JQLTransformer:
                 return self._unquote(str(node.children[0]))
             if node.data == "unquoted_value":
                 return str(node.children[0])
+            if node.data == "relative_date":
+                # Interpreted when compared with a date field; a plain string
+                # anywhere else, as Jira treats it.
+                return str(node.children[0])
             if node.data == "number_value":
                 text = str(node.children[0])
                 if "." in text:
@@ -320,10 +325,20 @@ class JQLTransformer:
         "key": Issue.key,
         "issuekey": Issue.key,
         "created": Issue.created_at,
+        "createddate": Issue.created_at,
         "updated": Issue.updated_at,
+        "updateddate": Issue.updated_at,
+        "resolved": Issue.resolved_at,
+        "resolutiondate": Issue.resolved_at,
         "due": Issue.due_date,
         "duedate": Issue.due_date,
     }
+
+    # Direct columns that hold a point in time. A value compared with one of
+    # these is a date: a relative date (-26w, "-1w 2d") counted from now, a
+    # date function's result, or a literal "yyyy-MM-dd" or "yyyy-MM-dd HH:mm".
+    _DATETIME_FIELDS = frozenset({"created", "createddate", "updated", "updateddate", "resolved", "resolutiondate"})
+    _DATE_FIELDS = frozenset({"due", "duedate"})
 
     # Fields that are FK lookups: field_name -> (fk_column, lookup_model, lookup_column)
     _LOOKUP_FIELDS: dict[str, tuple] = {
@@ -418,6 +433,8 @@ class JQLTransformer:
 
     def _apply_op_to_column(self, col, op: str, value, field: str = ""):
         """Apply *op* to a direct column."""
+        if field in self._DATETIME_FIELDS or field in self._DATE_FIELDS:
+            return self._apply_op_to_date_column(col, op, value, field)
         if op == "op_eq":
             if value is None:
                 return col.is_(None)
@@ -443,6 +460,72 @@ class JQLTransformer:
         if op == "op_lte":
             return col <= value
         raise ValueError(f"Unsupported operator: {op}")
+
+    def _apply_op_to_date_column(self, col, op: str, value, field: str):
+        """Apply *op* to a date or datetime column.
+
+        The value is coerced first (see ``_coerce_date``). Equality with a
+        day-precision value on a datetime column means "on that day", as it
+        does in Jira, so ``created = 2026-03-02`` matches the whole day and
+        ``created != 2026-03-02`` the rest.
+        """
+        if value is None:
+            if op == "op_eq":
+                return col.is_(None)
+            if op == "op_ne":
+                return col.isnot(None)
+            raise ValueError(f"Unsupported operator for an empty date: {op}")
+        if op in ("op_contains", "op_not_contains"):
+            raise ValueError(f"Operator not supported for date field '{field}'")
+
+        coerced, day_precision = self._coerce_date(value, field)
+        if field in self._DATETIME_FIELDS and day_precision and op in ("op_eq", "op_ne"):
+            day_start = datetime.combine(coerced.date(), time.min)
+            day_end = day_start + timedelta(days=1)
+            within = (col >= day_start) & (col < day_end)
+            return within if op == "op_eq" else ~within
+        if op == "op_eq":
+            return col == coerced
+        if op == "op_ne":
+            return col != coerced
+        if op == "op_gt":
+            return col > coerced
+        if op == "op_gte":
+            return col >= coerced
+        if op == "op_lt":
+            return col < coerced
+        if op == "op_lte":
+            return col <= coerced
+        raise ValueError(f"Unsupported operator: {op}")
+
+    _DATE_LITERAL_FORMATS = ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y-%m-%d", "%Y/%m/%d")
+
+    def _coerce_date(self, value, field: str) -> tuple:
+        """The value of a date comparison as a ``datetime`` (or ``date`` for a
+        date-only column), and whether it named a whole day."""
+        if isinstance(value, datetime):
+            coerced, day_precision = value, False
+        elif isinstance(value, date):
+            coerced, day_precision = datetime.combine(value, time.min), True
+        elif is_relative_date(value):
+            coerced, day_precision = relative_date_to_datetime(str(value)), False
+        else:
+            text = str(value).strip()
+            for fmt in self._DATE_LITERAL_FORMATS:
+                try:
+                    coerced = datetime.strptime(text, fmt)
+                except ValueError:
+                    continue
+                day_precision = fmt in ("%Y-%m-%d", "%Y/%m/%d")
+                break
+            else:
+                raise ValueError(
+                    f"Invalid date for field '{field}': '{value}'. Expected 'yyyy-MM-dd', "
+                    "'yyyy-MM-dd HH:mm', a relative date such as '-26w' or '-1w 2d', or a date function."
+                )
+        if field in self._DATE_FIELDS:
+            return coerced.date(), True
+        return coerced, day_precision
 
     @staticmethod
     def _is_text_column(field: str) -> bool:
