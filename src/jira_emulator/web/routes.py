@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import os
+import re
 from datetime import datetime
 from urllib.parse import urlencode
 
@@ -369,6 +370,32 @@ async def issue_detail(request: Request, key: str, db: AsyncSession = Depends(ge
             "version": __version__,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /browse/{key} and GET /projects/{key} — Jira's own URLs
+#
+# Jira serves an issue at /browse/KEY-123 and a project at /browse/KEY or
+# /projects/KEY, and every link Jira writes (the API's browse URLs, other
+# tools' issue links, Org Pulse's "open in Jira") uses those. The emulator's
+# pages are the same content at /issue/{key} and /project/{key}; these routes
+# serve them at the addresses the links carry.
+# ---------------------------------------------------------------------------
+_ISSUE_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*-\d+$")
+
+
+@router.get("/browse/{key}", response_class=HTMLResponse)
+async def browse(request: Request, key: str, db: AsyncSession = Depends(get_db)):
+    """An issue for KEY-123, a project for KEY, as on Jira."""
+    if _ISSUE_KEY_RE.match(key):
+        return await issue_detail(request, key, db)
+    return await project_detail(request, key, db)
+
+
+@router.get("/projects/{key}", response_class=HTMLResponse)
+async def project_detail_jira_url(request: Request, key: str, db: AsyncSession = Depends(get_db)):
+    """Jira Cloud's project URL."""
+    return await project_detail(request, key, db)
 
 
 # ---------------------------------------------------------------------------
