@@ -97,6 +97,17 @@ async def test_relative_dates_filter_on_created_and_resolved(client, version):
     found = await _search(client, "resolved <= -26w", version)
     assert old in found and recent not in found
 
+    # The releases module's query shape, ORDER BY resolved included (the
+    # backdated issues are still open, so its statusCategory clause is left out).
+    resp = await client.post(
+        "/rest/api/2/search" if version == 2 else "/rest/api/3/search/jql",
+        json={"jql": "resolutiondate >= -60w ORDER BY resolved DESC", "maxResults": 50},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    keys = [issue["key"] for issue in resp.json()["issues"]]
+    assert keys.index(recent) < keys.index(old)
+
     found = await _search(client, "created >= -2w AND created <= -1d", version)
     assert {recent, open_issue} <= found and old not in found
 
