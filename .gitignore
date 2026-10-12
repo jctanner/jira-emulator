@@ -39,3 +39,6 @@ exports/
 
 # Claude
 .claude/
+
+# Local browser captures may contain environment-specific or sensitive data.
+.playwright-mcp/
