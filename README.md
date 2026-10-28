@@ -34,6 +34,20 @@ uv run python -m jira_emulator serve --port 8080 --reload
 
 ### Run in a container
 
+Pre-built `linux/amd64` images are published to GHCR from `main` (`latest`
+and `sha-<commit>`) and from `v*` release tags (`X.Y.Z`, `X.Y`):
+
+```bash
+docker run -d -p 8080:8080 -p 8081:8081 -v jira-data:/data \
+  ghcr.io/jctanner/jira-emulator:latest
+```
+
+The image ships with a default API token (`JIRA_TOKEN=jira-emulator-default-token`)
+and `admin` user; it is an emulator for local development and CI, not a
+service to expose publicly. Override `JIRA_TOKEN` and `AUTH_MODE` as needed.
+
+To build locally instead:
+
 ```bash
 # Build and run (defaults to podman, port 8080)
 make run
