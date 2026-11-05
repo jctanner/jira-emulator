@@ -1,6 +1,7 @@
 """Tests for JQL search endpoints (POST and GET)."""
 
 import httpx
+import pytest
 
 from tests.conftest import AUTH_HEADER
 
@@ -298,3 +299,61 @@ async def test_v2_search_unaffected_by_v3_changes(client: httpx.AsyncClient):
     assert "maxResults" in data
     assert "nextPageToken" not in data
     assert "isLast" not in data
+
+
+# ---------------------------------------------------------------------------
+# ORDER BY key: numeric within a project, as in Jira
+# ---------------------------------------------------------------------------
+
+
+def _expected_key_order(created: list[dict], reverse: bool = False) -> list[str]:
+    keys = [c["key"] for c in created]
+    return sorted(keys, key=lambda k: int(k.split("-")[1]), reverse=reverse)
+
+
+@pytest.mark.parametrize("api", ["2", "3"])
+@pytest.mark.parametrize("direction", ["ASC", "DESC"])
+async def test_order_by_key_is_numeric(client: httpx.AsyncClient, api: str, direction: str):
+    """RHOAIENG-2 sorts before RHOAIENG-10 (a string sort puts -10 first)."""
+    created = await _create_issues(client, count=11)
+    jql = f"project = RHOAIENG ORDER BY key {direction}"
+    path = "search" if api == "2" else "search/jql"
+
+    resp = await client.post(
+        f"/rest/api/{api}/{path}", json={"jql": jql, "maxResults": 50, "fields": ["key"]}, headers=AUTH_HEADER
+    )
+
+    assert resp.status_code == 200
+    keys = [i["key"] for i in resp.json()["issues"]]
+    assert keys == _expected_key_order(created, reverse=direction == "DESC")
+
+
+async def test_default_order_is_numeric_key(client: httpx.AsyncClient):
+    created = await _create_issues(client, count=11)
+
+    resp = await client.get(
+        "/rest/api/2/search", params={"jql": "project = RHOAIENG", "maxResults": 50}, headers=AUTH_HEADER
+    )
+
+    assert resp.status_code == 200
+    assert [i["key"] for i in resp.json()["issues"]] == _expected_key_order(created)
+
+
+async def test_order_by_key_groups_projects(client: httpx.AsyncClient):
+    """Keys sort by project first, then by number."""
+    created = await _create_issues(client, count=2)
+    other = await client.post(
+        "/rest/api/2/issue",
+        json={"fields": {"project": {"key": "RHAIRFE"}, "summary": "rfe", "issuetype": {"name": "Feature Request"}}},
+        headers=AUTH_HEADER,
+    )
+    assert other.status_code == 201, other.text
+
+    resp = await client.post(
+        "/rest/api/2/search",
+        json={"jql": "project in (RHOAIENG, RHAIRFE) ORDER BY issuekey ASC", "fields": ["key"]},
+        headers=AUTH_HEADER,
+    )
+
+    keys = [i["key"] for i in resp.json()["issues"]]
+    assert keys == [other.json()["key"]] + _expected_key_order(created)

@@ -83,16 +83,23 @@ references/           # Jira API specs, JQL spec, auth spec, workflow research
 | `SEED_DATA` | `true` | Auto-load sample projects/workflows |
 | `IMPORT_ON_STARTUP` | `false` | Auto-import JSON on startup |
 | `ATTACHMENT_DIR` | `/data/attachments` | File upload storage |
+| `REQUEST_AUDIT_MAX_ENTRIES` | `2000` | Request audit size; `0` disables |
+| `REQUEST_AUDIT_MAX_BODY_BYTES` | `131072` | Request body bytes kept per audit entry |
 
 ## Database Snapshots (Containerized Mode)
 
 The emulator supports database backup and restore via the admin API, useful for test isolation and data recovery:
 
-- `POST /api/admin/snapshots` — Create a snapshot of the current database
+- `POST /api/admin/snapshots` — Create a snapshot of the current database and attachment files
 - `GET /api/admin/snapshots` — List available snapshots
-- `POST /api/admin/snapshots/{id}/restore` — Restore database from a snapshot
+- `POST /api/admin/snapshots/{id}/restore` — Restore a snapshot in place (no process restart); the data is live when the call returns
+- `DELETE /api/admin/snapshots/{id}` — Delete a snapshot and its attachment copy
 
-Snapshots are stored in the persistent `/data` volume when running in a container.
+Snapshots are stored in the persistent `/data` volume when running in a container: `snapshot_<label>_<ts>.db` plus `snapshot_<label>_<ts>.db.attachments/`. Restoring an older database-only snapshot leaves the attachment files alone.
+
+## Request Audit
+
+Every non-GET request under `/rest/` is recorded in memory (method, path as sent, query, body capped at `REQUEST_AUDIT_MAX_BODY_BYTES`, status, Basic-auth user), so test harnesses can check exactly what a client wrote. `GET /api/admin/requests?since=<seq>` reads it; `DELETE /api/admin/requests` clears it. It keeps the last `REQUEST_AUDIT_MAX_ENTRIES` (default 2000; 0 disables) and does not survive a restart.
 
 ## Conventions
 

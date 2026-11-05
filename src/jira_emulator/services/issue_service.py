@@ -983,6 +983,54 @@ async def delete_issue(db: AsyncSession, issue_id_or_key: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# format_changelog_histories
+# ---------------------------------------------------------------------------
+
+
+def format_changelog_histories(issue: Issue, base_url: str) -> list[dict]:
+    """Return the issue's change history as Jira changelog histories, oldest first.
+
+    Entries recorded by one author in the same second form one history, as
+    one Jira edit does.  Used by ``expand=changelog`` and by
+    ``GET /issue/{key}/changelog``.
+    """
+    changelog_histories: list[dict] = []
+    history_entries = issue.history_entries if hasattr(issue, "history_entries") else []
+    if history_entries:
+        # Group entries by (author_id, created_at rounded to same second)
+        from itertools import groupby
+
+        def _group_key(entry: IssueHistory) -> tuple:
+            ts = entry.created_at.replace(microsecond=0) if entry.created_at else None
+            return (entry.author_id, ts)
+
+        sorted_entries = sorted(history_entries, key=lambda e: (e.created_at, e.id))
+        for _, group_iter in groupby(sorted_entries, key=_group_key):
+            items_in_group = list(group_iter)
+            first = items_in_group[0]
+            changelog_histories.append(
+                {
+                    "id": str(first.id),
+                    "author": _format_user(first.author, base_url),
+                    "created": _format_datetime(first.created_at),
+                    "items": [
+                        {
+                            "field": entry.field,
+                            "fieldtype": entry.field_type,
+                            "from": entry.from_id,
+                            "fromString": entry.from_value,
+                            "to": entry.to_id,
+                            "toString": entry.to_value,
+                        }
+                        for entry in items_in_group
+                    ],
+                }
+            )
+
+    return changelog_histories
+
+
+# ---------------------------------------------------------------------------
 # format_issue_response
 # ---------------------------------------------------------------------------
 
@@ -1349,38 +1397,7 @@ async def format_issue_response(
             all_fields = filtered
 
     # -- changelog --
-    changelog_histories: list[dict] = []
-    history_entries = issue.history_entries if hasattr(issue, "history_entries") else []
-    if history_entries:
-        # Group entries by (author_id, created_at rounded to same second)
-        from itertools import groupby
-
-        def _group_key(entry: IssueHistory) -> tuple:
-            ts = entry.created_at.replace(microsecond=0) if entry.created_at else None
-            return (entry.author_id, ts)
-
-        sorted_entries = sorted(history_entries, key=lambda e: (e.created_at, e.id))
-        for _, group_iter in groupby(sorted_entries, key=_group_key):
-            items_in_group = list(group_iter)
-            first = items_in_group[0]
-            changelog_histories.append(
-                {
-                    "id": str(first.id),
-                    "author": _format_user(first.author, base_url),
-                    "created": _format_datetime(first.created_at),
-                    "items": [
-                        {
-                            "field": entry.field,
-                            "fieldtype": entry.field_type,
-                            "from": entry.from_id,
-                            "fromString": entry.from_value,
-                            "to": entry.to_id,
-                            "toString": entry.to_value,
-                        }
-                        for entry in items_in_group
-                    ],
-                }
-            )
+    changelog_histories = format_changelog_histories(issue, base_url)
 
     changelog = {
         "startAt": 0,

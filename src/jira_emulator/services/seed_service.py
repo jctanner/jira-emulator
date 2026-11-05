@@ -95,6 +95,9 @@ LINK_TYPES = [
     {"name": "Duplicate", "inward_description": "is duplicated by", "outward_description": "duplicates"},
     {"name": "Issue split", "inward_description": "is split from", "outward_description": "split to"},
     {"name": "Relates", "inward_description": "relates to", "outward_description": "relates to"},
+    # Red Hat Jira's split link; rfe-creator's split_submit.py links split
+    # children to their parent with it (identity.jira.split_link_type).
+    {"name": "Work item split", "inward_description": "is split from", "outward_description": "split to"},
 ]
 
 CUSTOM_FIELDS = [

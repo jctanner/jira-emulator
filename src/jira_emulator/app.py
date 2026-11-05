@@ -207,6 +207,14 @@ def create_app() -> FastAPI:
 
     app.add_middleware(RequestLoggingMiddleware)
 
+    # Request audit, added last so it is outermost and records the path the
+    # client sent (before the v3 rewrite).
+    from jira_emulator.request_audit import RequestAudit, RequestAuditMiddleware
+
+    settings = get_settings()
+    app.state.request_audit = RequestAudit(settings.REQUEST_AUDIT_MAX_ENTRIES, settings.REQUEST_AUDIT_MAX_BODY_BYTES)
+    app.add_middleware(RequestAuditMiddleware, audit=app.state.request_audit)
+
     # Register routers
     from jira_emulator.routers import (
         admin,

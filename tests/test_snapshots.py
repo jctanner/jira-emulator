@@ -216,3 +216,162 @@ async def test_api_501_when_disabled(client, monkeypatch):
 
     resp = await client.get("/api/admin/snapshots", headers=AUTH)
     assert resp.status_code == 501
+
+
+# ---------------------------------------------------------------------------
+# Restore in place, with attachments
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def attachment_dir(tmp_path, monkeypatch):
+    """Point ATTACHMENT_DIR at a temp directory."""
+    from jira_emulator.config import get_settings
+
+    path = tmp_path / "attachments"
+    path.mkdir()
+    monkeypatch.setenv("ATTACHMENT_DIR", str(path))
+    get_settings.cache_clear()
+    yield path
+    get_settings.cache_clear()
+
+
+def _no_subprocess(monkeypatch):
+    """Fail the test if restore shells out (the old supervisorctl restart)."""
+    import subprocess
+
+    def refuse(*args, **kwargs):
+        raise AssertionError(f"restore must not start a process: {args}")
+
+    monkeypatch.setattr(subprocess, "Popen", refuse)
+
+
+def test_restore_replaces_database_with_open_connection(tmp_dirs, tmp_db, attachment_dir, monkeypatch):
+    """Restore writes the live file in place; an open WAL connection sees it."""
+    from jira_emulator.services.snapshot_service import create_snapshot, restore_snapshot
+
+    _no_subprocess(monkeypatch)
+    live = sqlite3.connect(tmp_db)
+    live.execute("PRAGMA journal_mode=WAL")
+
+    info = create_snapshot("before")
+    live.execute("INSERT INTO items (name) VALUES ('after-snapshot')")
+    live.commit()
+
+    restore_snapshot(info["name"])
+
+    names = [row[0] for row in live.execute("SELECT name FROM items ORDER BY id")]
+    live.close()
+    assert names == ["hello"]
+
+
+def test_snapshot_round_trips_attachments(tmp_dirs, tmp_db, attachment_dir):
+    from jira_emulator.services.snapshot_service import create_snapshot, list_snapshots, restore_snapshot
+
+    (attachment_dir / "1_strategy.md").write_text("v1")
+    info = create_snapshot()
+    assert info["includes_attachments"] is True
+    assert info["attachment_files"] == 1
+    assert list_snapshots()[0]["includes_attachments"] is True
+
+    # Later activity: the file changes and a new upload reuses id 2.
+    (attachment_dir / "1_strategy.md").write_text("v2")
+    (attachment_dir / "2_extra.md").write_text("new")
+
+    result = restore_snapshot(info["name"])
+
+    assert result["attachments_restored"] is True
+    assert sorted(p.name for p in attachment_dir.iterdir()) == ["1_strategy.md"]
+    assert (attachment_dir / "1_strategy.md").read_text() == "v1"
+
+
+def test_restore_legacy_snapshot_keeps_attachments(tmp_dirs, tmp_db, attachment_dir):
+    """A database-only snapshot (made before attachments were included) leaves files alone."""
+    import shutil
+
+    from jira_emulator.services.snapshot_service import create_snapshot, restore_snapshot
+
+    info = create_snapshot()
+    shutil.rmtree(os.path.join(tmp_dirs["snap_dir"], info["name"] + ".attachments"))
+    (attachment_dir / "1_keep.md").write_text("keep")
+
+    result = restore_snapshot(info["name"])
+
+    assert result["attachments_restored"] is False
+    assert (attachment_dir / "1_keep.md").read_text() == "keep"
+
+
+def test_delete_removes_attachment_copy(tmp_dirs, tmp_db, attachment_dir):
+    from jira_emulator.services.snapshot_service import create_snapshot, delete_snapshot
+
+    (attachment_dir / "1_a.md").write_text("a")
+    info = create_snapshot()
+    copy = os.path.join(tmp_dirs["snap_dir"], info["name"] + ".attachments")
+    assert os.path.isdir(copy)
+
+    delete_snapshot(info["name"])
+
+    assert not os.path.exists(copy)
+
+
+@pytest.fixture()
+async def file_client(tmp_path, tmp_dirs, attachment_dir, monkeypatch):
+    """An app client on a file-backed database with snapshots enabled."""
+    import httpx
+
+    from jira_emulator.config import get_settings
+    from jira_emulator.database import reset_engine
+
+    open(tmp_dirs["marker"], "w").close()
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'live.db'}")
+    monkeypatch.setenv("WEBHOOKS_ENABLED", "false")
+    get_settings.cache_clear()
+    reset_engine()
+
+    from jira_emulator.app import create_app, lifespan
+
+    app = create_app()
+    async with (
+        lifespan(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as ac,
+    ):
+        yield ac
+
+    from jira_emulator.database import get_engine
+
+    await get_engine().dispose()
+    reset_engine()
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api", ["2", "3"])
+async def test_api_restore_is_live_when_it_returns(file_client, monkeypatch, api):
+    """POST .../restore returns with the snapshot's issues and attachments already served."""
+    _no_subprocess(monkeypatch)
+    base = f"/rest/api/{api}"
+    fields = {"project": {"key": "TEST"}, "summary": "kept", "issuetype": {"name": "Task"}}
+    kept = (await file_client.post(f"{base}/issue", json={"fields": fields}, headers=AUTH)).json()["key"]
+    files = {"file": ("strategy.md", b"v1", "text/markdown")}
+    att = await file_client.post(
+        f"{base}/issue/{kept}/attachments", files=files, headers={**AUTH, "X-Atlassian-Token": "no-check"}
+    )
+    assert att.status_code == 200, att.text
+    att_id = att.json()[0]["id"]
+
+    snap = await file_client.post("/api/admin/snapshots", json={"label": "api"}, headers=AUTH)
+    assert snap.status_code == 201
+    name = snap.json()["name"]
+
+    fields = {**fields, "summary": "after snapshot"}
+    later = (await file_client.post(f"{base}/issue", json={"fields": fields}, headers=AUTH)).json()["key"]
+
+    resp = await file_client.post(f"/api/admin/snapshots/{name}/restore", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["attachments_restored"] is True
+
+    assert (await file_client.get(f"{base}/issue/{later}", headers=AUTH)).status_code == 404
+    assert (await file_client.get(f"{base}/issue/{kept}", headers=AUTH)).status_code == 200
+    content = await file_client.get(f"{base}/attachment/content/{att_id}", headers=AUTH)
+    assert content.status_code == 200
+    assert content.content == b"v1"

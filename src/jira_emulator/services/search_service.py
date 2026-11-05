@@ -114,8 +114,8 @@ async def search_issues(
     if order_by_clauses:
         stmt = stmt.order_by(*order_by_clauses)
     else:
-        # Default ordering: by key ascending
-        stmt = stmt.order_by(Issue.key.asc())
+        # Default ordering: by key ascending, numerically within a project
+        stmt = stmt.order_by(*(part.asc() for part in JQLTransformer._KEY_ORDER))
 
     # Pagination
     stmt = stmt.offset(start_at).limit(max_results)

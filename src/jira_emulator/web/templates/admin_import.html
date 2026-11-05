@@ -213,7 +213,7 @@
 <div class="card">
     <h2>Database Snapshots</h2>
     <p style="color: var(--ds-text-subtle); margin-bottom: var(--ds-space-200);">
-        Save the current database state and restore it later. Restoring a snapshot will restart the server.
+        Save the current database state and restore it later. Restoring a snapshot replaces the database and attachment files.
     </p>
 
     <form method="post" action="/admin/backup" style="display: flex; gap: var(--ds-space-100); align-items: end; margin-bottom: var(--ds-space-200);">
@@ -250,7 +250,7 @@
                 </td>
                 <td style="text-align: right; white-space: nowrap;">
                     <form method="post" action="/admin/restore/{{ snap.name }}" style="display: inline;"
-                          onsubmit="return confirm('Restore from {{ snap.name }}? This will overwrite the current database and restart the server.');">
+                          onsubmit="return confirm('Restore from {{ snap.name }}? This will overwrite the current database and attachment files.');">
                         <button type="submit" class="btn btn-primary" style="padding: 4px 10px; font-size: 0.85em;">Restore</button>
                     </form>
                     <form method="post" action="/admin/snapshot/{{ snap.name }}/delete" style="display: inline;"

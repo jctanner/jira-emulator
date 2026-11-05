@@ -27,6 +27,10 @@ class Settings(BaseSettings):
         ge=0,
         description="Maximum logical description characters after ADF normalization.",
     )
+    # Request audit (request_audit.py): write requests kept in memory for
+    # GET /api/admin/requests.  0 entries disables it.
+    REQUEST_AUDIT_MAX_ENTRIES: int = Field(default=2000, ge=0)
+    REQUEST_AUDIT_MAX_BODY_BYTES: int = Field(default=131072, ge=0)
     WEBHOOKS_ENABLED: bool = True
     WEBHOOK_ALLOW_INSECURE_HTTP: bool = False
     WEBHOOK_ALLOW_PRIVATE_NETWORKS: bool = False

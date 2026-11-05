@@ -227,3 +227,28 @@ async def test_create_link_invalid_type_returns_404(client):
         headers=AUTH,
     )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api", ["2", "3"])
+async def test_work_item_split_link_type(client, api):
+    """The 'Work item split' type rfe-creator uses is seeded and links issues."""
+    types = (await client.get(f"/rest/api/{api}/issueLinkType", headers=AUTH)).json()["issueLinkTypes"]
+    split = next(t for t in types if t["name"] == "Work item split")
+    assert (split["inward"], split["outward"]) == ("is split from", "split to")
+
+    parent = await _create_issue(client, summary="Parent RFE")
+    child = await _create_issue(client, summary="Child RFE")
+    resp = await client.post(
+        f"/rest/api/{api}/issueLink",
+        json={
+            "type": {"name": "Work item split"},
+            "inwardIssue": {"key": child["key"]},
+            "outwardIssue": {"key": parent["key"]},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201
+
+    links = (await client.get(f"/rest/api/{api}/issue/{parent['key']}", headers=AUTH)).json()["fields"]["issuelinks"]
+    assert [link["type"]["name"] for link in links] == ["Work item split"]

@@ -250,6 +250,39 @@ async def delete_issue(
 # ---------------------------------------------------------------------------
 
 
+@router.get("/issue/{issueIdOrKey}/changelog")
+async def get_issue_changelog(
+    issueIdOrKey: str,
+    startAt: int = Query(default=0, ge=0),
+    maxResults: int = Query(default=100, ge=1),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Page through an issue's change history, oldest first (Jira's PageBean)."""
+    settings = get_settings()
+    base_url = settings.BASE_URL
+
+    issue = await issue_service.get_issue(db, issueIdOrKey)
+    if issue is None:
+        raise HTTPException(
+            status_code=404,
+            detail=_jira_error([f"Issue Does Not Exist: {issueIdOrKey}"]),
+        )
+
+    # Jira caps a changelog page at 100 histories.
+    maxResults = min(maxResults, 100)
+    histories = issue_service.format_changelog_histories(issue, base_url)
+    values = histories[startAt : startAt + maxResults]
+    return {
+        "self": f"{base_url}/rest/api/2/issue/{issueIdOrKey}/changelog?startAt={startAt}&maxResults={maxResults}",
+        "maxResults": maxResults,
+        "startAt": startAt,
+        "total": len(histories),
+        "isLast": startAt + len(values) >= len(histories),
+        "values": values,
+    }
+
+
 @router.get("/issue/{issueIdOrKey}/comment")
 async def list_comments(
     issueIdOrKey: str,

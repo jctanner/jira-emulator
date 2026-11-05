@@ -559,22 +559,15 @@ async def admin_backup(request: Request, label: str = Form("")):
 # ---------------------------------------------------------------------------
 @router.post("/admin/restore/{name}")
 async def admin_restore(name: str, request: Request):
-    """Restore a snapshot and show a restart message."""
+    """Restore a snapshot and redirect back to admin."""
     try:
         restore_snapshot(name)
     except ValueError as exc:
         return HTMLResponse(f"<h1>Error</h1><p>{exc}</p>", status_code=404)
-    return HTMLResponse(
-        """<!DOCTYPE html>
-<html><head><title>Restoring...</title>
-<style>body{font-family:sans-serif;text-align:center;padding-top:80px;}</style>
-</head><body>
-<h1>Restoring from snapshot...</h1>
-<p>The server is restarting. You will be redirected shortly.</p>
-<script>setTimeout(function(){location.href='/admin/import';},3000);</script>
-</body></html>""",
-        status_code=200,
-    )
+    from jira_emulator.database import get_engine
+
+    await get_engine().dispose()
+    return RedirectResponse(url="/admin/import", status_code=303)
 
 
 # ---------------------------------------------------------------------------

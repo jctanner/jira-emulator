@@ -1,4 +1,4 @@
-"""Admin endpoints: /api/admin/import, /api/admin/reset, /api/admin/snapshots."""
+"""Admin endpoints: /api/admin/import, /api/admin/reset, /api/admin/requests, /api/admin/snapshots."""
 
 import json
 import os
@@ -240,6 +240,34 @@ async def reset_database(
     return {"message": "Database reset successfully"}
 
 
+# ---- Request audit endpoints (see request_audit.py) ----
+
+
+@router.get("/requests")
+async def get_requests(
+    request: Request,
+    since: int = 0,
+    limit: int | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """List recorded write requests with seq greater than ``since``, oldest first."""
+    audit = request.app.state.request_audit
+    entries = audit.since(since, limit)
+    return {
+        "enabled": audit.enabled,
+        "last_seq": audit.last_seq,
+        "max_entries": audit.max_entries,
+        "requests": entries,
+    }
+
+
+@router.delete("/requests", status_code=204)
+async def clear_requests(request: Request, current_user: User = Depends(get_current_user)):
+    """Empty the request audit; sequence numbers keep increasing."""
+    request.app.state.request_audit.clear()
+    return Response(status_code=204)
+
+
 # ---- Snapshot endpoints ----
 
 
@@ -276,13 +304,16 @@ async def post_snapshot(
 
 @router.post("/snapshots/{name}/restore")
 async def post_restore(name: str, current_user: User = Depends(get_current_user)):
-    """Restore a snapshot (restarts the API process)."""
+    """Restore a snapshot in place; the restored data is live when this returns."""
     _check_snapshots_enabled()
     try:
-        restore_snapshot(name)
+        info = restore_snapshot(name)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    return {"message": "Restoring from snapshot. Server is restarting..."}
+    # Drop pooled connections so later requests open fresh ones on the
+    # restored file.
+    await get_engine().dispose()
+    return {"message": "Snapshot restored.", **info}
 
 
 @router.delete("/snapshots/{name}", status_code=204)

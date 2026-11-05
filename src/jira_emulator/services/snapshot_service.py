@@ -1,14 +1,21 @@
 """Database snapshot backup & restore service.
 
-This feature is only available inside the container (where supervisord manages
-the jira-api process).  The container is identified by the presence of a marker
-file created in the Dockerfile.
+This feature is only available inside the container.  The container is
+identified by the presence of a marker file created in the Dockerfile.
+
+A snapshot is the database file ``snapshot_<label>_<ts>.db`` plus, beside it,
+the attachment files in ``snapshot_<label>_<ts>.db.attachments/``: attachment
+rows refer to files under ``ATTACHMENT_DIR``, so a database-only snapshot would
+restore rows whose content is missing or belongs to a later upload.
+
+Restore happens in-process.  The caller must hold the database-operation lock
+(``DatabaseOperationMiddleware`` holds it for every admin request), so no other
+session is using the database while it is overwritten.
 """
 
 import os
 import shutil
 import sqlite3
-import subprocess
 from datetime import UTC, datetime
 
 from jira_emulator.config import get_settings
@@ -47,6 +54,22 @@ def get_db_path() -> str | None:
     return path_part
 
 
+def _attachments_path(snapshot_path: str) -> str:
+    """Return the attachment directory stored beside a snapshot file."""
+    return snapshot_path + ".attachments"
+
+
+def _copy_attachments(src: str, dest: str) -> int:
+    """Replace ``dest`` with a copy of ``src``; return the number of files copied."""
+    if os.path.isdir(dest):
+        shutil.rmtree(dest)
+    if not os.path.isdir(src):
+        os.makedirs(dest, exist_ok=True)
+        return 0
+    shutil.copytree(src, dest)
+    return sum(len(files) for _, _, files in os.walk(dest))
+
+
 def list_snapshots() -> list[dict]:
     """List existing snapshots, newest first."""
     if not os.path.isdir(SNAPSHOT_DIR):
@@ -63,6 +86,7 @@ def list_snapshots() -> list[dict]:
                 "name": entry,
                 "created": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
                 "size_bytes": stat.st_size,
+                "includes_attachments": os.path.isdir(_attachments_path(full)),
             }
         )
 
@@ -96,11 +120,15 @@ def create_snapshot(label: str | None = None) -> dict:
         target_conn.close()
         source_conn.close()
 
+    attachment_count = _copy_attachments(get_settings().ATTACHMENT_DIR, _attachments_path(dest))
+
     stat = os.stat(dest)
     return {
         "name": filename,
         "created": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
         "size_bytes": stat.st_size,
+        "includes_attachments": True,
+        "attachment_files": attachment_count,
     }
 
 
@@ -110,8 +138,14 @@ def _validate_name(name: str) -> None:
         raise ValueError(f"Invalid snapshot name: {name}")
 
 
-def restore_snapshot(name: str) -> None:
-    """Restore a snapshot over the live database and restart the API process."""
+def restore_snapshot(name: str) -> dict:
+    """Restore a snapshot over the live database and attachment directory.
+
+    The database is written with the sqlite3 backup API rather than a file
+    copy, so the live file's WAL and shared-memory files stay consistent and
+    open connections see the restored pages on their next transaction.  The
+    caller disposes the engine afterwards (see ``routers/admin.py``).
+    """
     _validate_name(name)
 
     snap_path = os.path.join(SNAPSHOT_DIR, name)
@@ -122,10 +156,22 @@ def restore_snapshot(name: str) -> None:
     if db_path is None:
         raise RuntimeError("Cannot restore to an in-memory database")
 
-    shutil.copy2(snap_path, db_path)
+    source_conn = sqlite3.connect(snap_path)
+    target_conn = sqlite3.connect(db_path, timeout=30)
+    try:
+        source_conn.backup(target_conn)
+    finally:
+        target_conn.close()
+        source_conn.close()
 
-    # Fire-and-forget: supervisorctl will kill the current process
-    subprocess.Popen(["supervisorctl", "restart", "jira-api"])
+    # Snapshots made before attachments were included have no attachment
+    # directory; leave the live attachment files alone for those.
+    attachments = _attachments_path(snap_path)
+    attachment_count = None
+    if os.path.isdir(attachments):
+        attachment_count = _copy_attachments(attachments, get_settings().ATTACHMENT_DIR)
+
+    return {"name": name, "attachments_restored": attachment_count is not None, "attachment_files": attachment_count}
 
 
 def delete_snapshot(name: str) -> None:
@@ -137,3 +183,6 @@ def delete_snapshot(name: str) -> None:
         raise ValueError(f"Snapshot not found: {name}")
 
     os.remove(snap_path)
+    attachments = _attachments_path(snap_path)
+    if os.path.isdir(attachments):
+        shutil.rmtree(attachments)

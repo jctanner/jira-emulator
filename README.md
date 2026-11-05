@@ -197,6 +197,7 @@ All endpoints below are available under both `/rest/api/2/` and `/rest/api/3/`. 
 |----------|---------|-------------|
 | `/rest/api/2/issue` | POST | Create issue |
 | `/rest/api/2/issue/{id}` | GET, PUT, DELETE | Issue CRUD |
+| `/rest/api/2/issue/{id}/changelog` | GET | Change history, paged (`startAt`, `maxResults` up to 100) |
 | `/rest/api/2/issue/{id}/comment` | GET, POST | Comments |
 | `/rest/api/2/issue/{id}/transitions` | GET, POST | Workflow transitions |
 | `/rest/api/2/issue/{id}/watchers` | GET, POST, DELETE | Watchers |
@@ -227,8 +228,10 @@ All endpoints below are available under both `/rest/api/2/` and `/rest/api/3/`. 
 | `/rest/pat/latest/tokens` | POST, GET | PAT management |
 | `/rest/pat/latest/tokens/{id}` | DELETE | Revoke PAT |
 | `/api/admin/import` | POST | Bulk import |
-| `/api/admin/snapshots` | GET, POST | List / create database snapshots |
-| `/api/admin/snapshots/{id}/restore` | POST | Restore database snapshot |
+| `/api/admin/requests` | GET, DELETE | Request audit: recorded write requests (`since`, `limit`) / clear |
+| `/api/admin/snapshots` | GET, POST | List / create snapshots (database and attachment files) |
+| `/api/admin/snapshots/{id}/restore` | POST | Restore a snapshot in place; live when the call returns |
+| `/api/admin/snapshots/{id}` | DELETE | Delete a snapshot |
 
 ### JQL Support
 

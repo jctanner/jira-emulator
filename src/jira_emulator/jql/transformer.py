@@ -16,7 +16,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import lark
-from sqlalchemy import and_, exists, not_, or_, select
+from sqlalchemy import Integer, and_, cast, exists, not_, or_, select
 from sqlalchemy.sql import func
 
 from jira_emulator.jql.functions import is_relative_date, relative_date_to_datetime, resolve_function
@@ -1043,10 +1043,20 @@ class JQLTransformer:
     # ORDER BY
     # ------------------------------------------------------------------
 
-    # Mapping of field names to columns usable in ORDER BY
+    # Jira orders issue keys by project, then by issue number as an integer,
+    # so RHAISTRAT-2 sorts before RHAISTRAT-10.  Project keys never contain
+    # "-", so the first "-" separates the two parts.
+    _KEY_DASH = func.instr(Issue.key, "-")
+    _KEY_ORDER = (
+        func.substr(Issue.key, 1, _KEY_DASH - 1),
+        cast(func.substr(Issue.key, _KEY_DASH + 1), Integer),
+    )
+
+    # Mapping of field names to columns usable in ORDER BY.  A tuple is a
+    # multi-column sort key.
     _ORDER_BY_COLUMNS: dict[str, Any] = {
-        "key": Issue.key,
-        "issuekey": Issue.key,
+        "key": _KEY_ORDER,
+        "issuekey": _KEY_ORDER,
         "summary": Issue.summary,
         "created": Issue.created_at,
         "createddate": Issue.created_at,
@@ -1086,9 +1096,7 @@ class JQLTransformer:
                 if col is None:
                     raise ValueError(f"Cannot ORDER BY unsupported field: '{field_name}'")
 
-                if direction == "desc":
-                    result.append(col.desc())
-                else:
-                    result.append(col.asc())
+                for part in col if isinstance(col, tuple) else (col,):
+                    result.append(part.desc() if direction == "desc" else part.asc())
 
         return result
