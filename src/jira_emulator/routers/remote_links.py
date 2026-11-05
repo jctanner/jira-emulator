@@ -94,7 +94,7 @@ async def create_remote_link(
     issue_key: str,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create or upsert a remote link on an issue."""
     issue = await _resolve_issue(db, issue_key)
@@ -137,7 +137,7 @@ async def update_remote_link(
     link_id: int,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Update a remote link by ID (full replacement)."""
     issue = await _resolve_issue(db, issue_key)
@@ -161,7 +161,7 @@ async def list_remote_links(
     request: Request,
     globalId: str | None = Query(None),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List remote links, optionally filtered by globalId."""
     issue = await _resolve_issue(db, issue_key)
@@ -182,7 +182,7 @@ async def get_remote_link(
     link_id: int,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get a single remote link by ID."""
     issue = await _resolve_issue(db, issue_key)
@@ -195,7 +195,7 @@ async def delete_remote_link(
     issue_key: str,
     link_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete a remote link by ID."""
     issue = await _resolve_issue(db, issue_key)
@@ -210,7 +210,7 @@ async def delete_remote_link_by_global_id(
     issue_key: str,
     globalId: str = Query(...),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete a remote link by globalId."""
     issue = await _resolve_issue(db, issue_key)

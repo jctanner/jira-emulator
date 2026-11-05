@@ -58,7 +58,7 @@ async def get_server_info(
 async def list_priorities(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all priorities."""
     settings = get_settings()
@@ -84,7 +84,7 @@ async def list_priorities(
 async def list_statuses(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all statuses."""
     settings = get_settings()
@@ -110,7 +110,7 @@ async def list_statuses(
 async def list_resolutions(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all resolutions."""
     settings = get_settings()
@@ -134,7 +134,7 @@ async def list_resolutions(
 async def list_issue_types(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all issue types."""
     settings = get_settings()

@@ -142,7 +142,7 @@ async def _admin_template_context(request: Request, db: AsyncSession, **extra):
 # GET / — Home page
 # ---------------------------------------------------------------------------
 @router.get("/", response_class=HTMLResponse)
-async def home(request: Request, db: AsyncSession = Depends(get_db)):
+async def home(request: Request, db: AsyncSession = Depends(get_db, scope="function")):
     """Dashboard showing project list and summary statistics."""
 
     # Total counts
@@ -177,7 +177,7 @@ async def home(request: Request, db: AsyncSession = Depends(get_db)):
 # GET /project/{key} — Project detail
 # ---------------------------------------------------------------------------
 @router.get("/project/{key}", response_class=HTMLResponse)
-async def project_detail(request: Request, key: str, db: AsyncSession = Depends(get_db)):
+async def project_detail(request: Request, key: str, db: AsyncSession = Depends(get_db, scope="function")):
     """Show a single project with status and type breakdowns."""
 
     result = await db.execute(select(Project).where(Project.key == key))
@@ -235,7 +235,7 @@ async def issue_list(
     page: int = 1,
     sort: str = "created",
     order: str = "DESC",
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Paginated, filterable issue list."""
 
@@ -319,7 +319,7 @@ async def issue_list(
 # GET /issue/{key} — Issue detail
 # ---------------------------------------------------------------------------
 @router.get("/issue/{key}", response_class=HTMLResponse)
-async def issue_detail(request: Request, key: str, db: AsyncSession = Depends(get_db)):
+async def issue_detail(request: Request, key: str, db: AsyncSession = Depends(get_db, scope="function")):
     """Full issue detail view."""
 
     issue = await issue_service.get_issue(db, key)
@@ -385,7 +385,7 @@ _ISSUE_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*-\d+$")
 
 
 @router.get("/browse/{key}", response_class=HTMLResponse)
-async def browse(request: Request, key: str, db: AsyncSession = Depends(get_db)):
+async def browse(request: Request, key: str, db: AsyncSession = Depends(get_db, scope="function")):
     """An issue for KEY-123, a project for KEY, as on Jira."""
     if _ISSUE_KEY_RE.match(key):
         return await issue_detail(request, key, db)
@@ -393,7 +393,7 @@ async def browse(request: Request, key: str, db: AsyncSession = Depends(get_db))
 
 
 @router.get("/projects/{key}", response_class=HTMLResponse)
-async def project_detail_jira_url(request: Request, key: str, db: AsyncSession = Depends(get_db)):
+async def project_detail_jira_url(request: Request, key: str, db: AsyncSession = Depends(get_db, scope="function")):
     """Jira Cloud's project URL."""
     return await project_detail(request, key, db)
 
@@ -402,7 +402,7 @@ async def project_detail_jira_url(request: Request, key: str, db: AsyncSession =
 # GET /admin/import — Import form
 # ---------------------------------------------------------------------------
 @router.get("/admin/import", response_class=HTMLResponse)
-async def admin_import_form(request: Request, db: AsyncSession = Depends(get_db)):
+async def admin_import_form(request: Request, db: AsyncSession = Depends(get_db, scope="function")):
     """Render the JSON import upload form."""
     return templates.TemplateResponse(
         request=request,
@@ -413,7 +413,7 @@ async def admin_import_form(request: Request, db: AsyncSession = Depends(get_db)
 
 @router.post("/admin/users")
 async def admin_user_create(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     username: str = Form(...),
     display_name: str = Form(...),
     email: str = Form(...),
@@ -430,7 +430,7 @@ async def admin_user_create(
 
 
 @router.get("/admin/users/{username}", response_class=HTMLResponse)
-async def admin_user_detail(request: Request, username: str, db: AsyncSession = Depends(get_db)):
+async def admin_user_detail(request: Request, username: str, db: AsyncSession = Depends(get_db, scope="function")):
     """Render identity, credential metadata, and lifecycle controls for one user."""
     user = await user_service.get_user_by_username(db, username)
     if user is None:
@@ -483,7 +483,7 @@ def _user_detail_redirect(username: str, *, message: str | None = None, error: s
 @router.post("/admin/users/{username}/profile")
 async def admin_user_update_profile(
     username: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     display_name: str = Form(...),
     email: str = Form(...),
 ):
@@ -501,7 +501,7 @@ async def admin_user_update_profile(
 @router.post("/admin/users/{username}/status")
 async def admin_user_update_status(
     username: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     active: bool = Form(...),
 ):
     """Activate or deactivate a user."""
@@ -518,7 +518,7 @@ async def admin_user_update_status(
 @router.post("/admin/users/{username}/password")
 async def admin_user_reset_password(
     username: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     password: str = Form(...),
 ):
     """Set a new password without exposing the previous credential."""
@@ -533,7 +533,7 @@ async def admin_user_reset_password(
 
 
 @router.post("/admin/users/{username}/tokens/{token_id}/revoke")
-async def admin_user_revoke_token(username: str, token_id: int, db: AsyncSession = Depends(get_db)):
+async def admin_user_revoke_token(username: str, token_id: int, db: AsyncSession = Depends(get_db, scope="function")):
     """Revoke one token owned by the selected user."""
     user = await user_service.get_user_by_username(db, username)
     if user is None:
@@ -607,7 +607,7 @@ async def admin_reset(request: Request):
 @router.post("/admin/projects")
 async def admin_project_create(
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     key: str = Form(...),
     name: str = Form(...),
     description: str = Form(""),
@@ -635,7 +635,7 @@ async def admin_project_create(
 async def admin_project_delete(
     request: Request,
     project_key: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete a project from the admin UI."""
     result = await delete_project(db, project_key)
@@ -649,7 +649,7 @@ async def admin_project_delete(
 
 @router.post("/admin/webhooks")
 async def admin_webhook_create(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     project_id: int = Form(...),
     name: str = Form(...),
     url: str = Form(...),
@@ -683,7 +683,7 @@ async def admin_webhook_create(
 
 
 @router.post("/admin/webhooks/{webhook_id}/delete")
-async def admin_webhook_delete(webhook_id: int, db: AsyncSession = Depends(get_db)):
+async def admin_webhook_delete(webhook_id: int, db: AsyncSession = Depends(get_db, scope="function")):
     row = await db.get(Webhook, webhook_id)
     if row is None or row.kind != "admin":
         query = urlencode({"webhook_error": "Webhook not found."})
@@ -697,7 +697,7 @@ async def admin_webhook_delete(webhook_id: int, db: AsyncSession = Depends(get_d
 async def admin_import_upload(
     request: Request,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Accept a JSON or archive file upload and import issues."""
     import tempfile
@@ -803,7 +803,7 @@ async def admin_import_upload(
 # GET /api/web/create-metadata — JSON for the create-issue modal
 # ---------------------------------------------------------------------------
 @router.get("/api/web/create-metadata")
-async def create_metadata(db: AsyncSession = Depends(get_db)):
+async def create_metadata(db: AsyncSession = Depends(get_db, scope="function")):
     """Return projects, issue types, priorities, and users for the create form."""
     projects = (await db.execute(select(Project).order_by(Project.key))).scalars().all()
     issue_types = (await db.execute(select(IssueType).order_by(IssueType.name))).scalars().all()
@@ -825,7 +825,7 @@ async def create_metadata(db: AsyncSession = Depends(get_db)):
 @router.post("/issue/create")
 async def create_issue_web(
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     project: str = Form(...),
     issuetype: str = Form(...),
     summary: str = Form(...),
@@ -872,7 +872,7 @@ async def create_issue_web(
 async def edit_issue_web(
     key: str,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     summary: str = Form(...),
     description: str = Form(""),
     priority: str = Form(""),
@@ -939,7 +939,7 @@ async def edit_issue_web(
 @router.post("/issue/{key}/delete")
 async def delete_issue_web(
     key: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete an issue and redirect to its project page."""
     from jira_emulator.services import issue_service
@@ -966,7 +966,7 @@ async def delete_issue_web(
 async def rollback_issue_web(
     key: str,
     history_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Rollback an issue to a previous history point by reversing newer changes."""
     from jira_emulator.services.user_service import get_or_create_user, slugify_username
@@ -1069,7 +1069,7 @@ async def rollback_issue_web(
 async def add_comment_web(
     key: str,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     body: str = Form(...),
     parentId: str | None = Form(default=None),
 ):
@@ -1121,7 +1121,7 @@ async def add_comment_web(
 async def upload_attachment_web(
     key: str,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Upload file attachments from the web UI and redirect back to the issue."""
     import mimetypes as mt
@@ -1188,7 +1188,7 @@ async def delete_attachment_web(
     key: str,
     attachment_id: int,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete an attachment from the web UI and redirect back to the issue."""
     from sqlalchemy import select as sa_select
@@ -1238,7 +1238,7 @@ async def delete_attachment_web(
 async def view_attachment_web(
     attachment_id: int,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Serve a text-based attachment inline for viewing in the browser."""
     from fastapi.responses import FileResponse

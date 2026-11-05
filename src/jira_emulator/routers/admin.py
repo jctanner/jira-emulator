@@ -72,7 +72,7 @@ def _project_response(project) -> dict:
 async def import_data(
     body: ImportRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Import issues into the Jira emulator."""
     result = await import_issues(db, body.issues)
@@ -89,7 +89,7 @@ async def import_data(
 async def import_file_upload(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Import issues from a JSON or archive file upload (.json, .zip, .tar.gz, .tgz, .tar)."""
     filename = file.filename or ""
@@ -153,7 +153,7 @@ async def import_file_upload(
 async def import_project_config_upload(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Import a v1.0 project configuration JSON file."""
     content = await file.read()
@@ -191,7 +191,7 @@ async def import_project_config_upload(
 async def create_admin_project(
     body: AdminProjectCreateBody,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create a project from the admin API."""
     try:
@@ -212,7 +212,7 @@ async def create_admin_project(
 async def delete_admin_project(
     project_key: str,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete a project and its issues from the admin API."""
     result = await delete_project(db, project_key)

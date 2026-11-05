@@ -39,7 +39,7 @@ async def get_issue_property_keys(
     issueIdOrKey: str,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Return the keys of all properties on an issue."""
     issue = await _resolve_issue(db, issueIdOrKey)
@@ -55,7 +55,7 @@ async def get_issue_property(
     issueIdOrKey: str,
     propertyKey: str,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Return the key and value of an issue property."""
     issue = await _resolve_issue(db, issueIdOrKey)
@@ -80,7 +80,7 @@ async def set_issue_property(
     propertyKey: str,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Set the value of an issue property. Returns 201 on create, 200 on update."""
     issue = await _resolve_issue(db, issueIdOrKey)
@@ -154,7 +154,7 @@ async def delete_issue_property(
     issueIdOrKey: str,
     propertyKey: str,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete an issue property."""
     issue = await _resolve_issue(db, issueIdOrKey)

@@ -31,7 +31,7 @@ async def create_token(
     body: CreateTokenRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create a new Personal Access Token."""
     try:
@@ -60,7 +60,7 @@ async def create_token(
 async def list_tokens(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all tokens for the current user (without raw values)."""
     result = await db.execute(
@@ -90,7 +90,7 @@ async def revoke_token(
     tokenId: int,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Revoke (deactivate) a Personal Access Token."""
     result = await db.execute(

@@ -64,7 +64,15 @@ def get_session_factory():
 
 
 async def get_db(request: Request):
-    """FastAPI dependency that yields an async database session."""
+    """FastAPI dependency that yields an async database session.
+
+    Always declare it as ``Depends(get_db, scope="function")``. The default
+    request scope runs the code after ``yield``, and so the commit, *after*
+    the response is sent. A client that writes and then reads back at once,
+    as strat-creator's side-effect journal does, could then read the
+    pre-commit state. ``DatabaseOperationMiddleware`` releases its lock when
+    the response starts, so the commit must happen before that.
+    """
     factory = get_session_factory()
     async with factory() as session:
         try:

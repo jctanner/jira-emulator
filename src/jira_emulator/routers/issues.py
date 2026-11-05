@@ -69,7 +69,7 @@ async def create_issue(
     body: CreateIssueRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create a new issue."""
     settings = get_settings()
@@ -120,7 +120,7 @@ async def get_issue(
     fields: str | None = Query(default=None),
     expand: str | None = Query(default=None),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get a single issue by key or id."""
     settings = get_settings()
@@ -153,7 +153,7 @@ async def update_issue(
     body: UpdateIssueRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Update an existing issue."""
     try:
@@ -209,7 +209,7 @@ async def delete_issue(
     issueIdOrKey: str,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete an issue."""
     issue = await issue_service.get_issue(db, issueIdOrKey)
@@ -256,7 +256,7 @@ async def get_issue_changelog(
     startAt: int = Query(default=0, ge=0),
     maxResults: int = Query(default=100, ge=1),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Page through an issue's change history, oldest first (Jira's PageBean)."""
     settings = get_settings()
@@ -290,7 +290,7 @@ async def list_comments(
     startAt: int = Query(default=0),
     maxResults: int = Query(default=50),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List comments for an issue."""
     settings = get_settings()
@@ -352,7 +352,7 @@ async def add_comment(
     body: CreateCommentRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Add a comment to an issue."""
     settings = get_settings()
@@ -470,7 +470,7 @@ async def get_transitions(
     issueIdOrKey: str,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get available transitions for an issue."""
     settings = get_settings()
@@ -516,7 +516,7 @@ async def perform_transition(
     body: TransitionRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Perform a transition on an issue."""
     issue = await issue_service.get_issue(db, issueIdOrKey)
@@ -558,7 +558,7 @@ async def get_watchers(
     issueIdOrKey: str,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get watchers for an issue."""
     settings = get_settings()
@@ -593,7 +593,7 @@ async def add_watcher(
     issueIdOrKey: str,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Add a watcher to an issue. Body is a JSON string with the username."""
     issue = await issue_service.get_issue(db, issueIdOrKey)
@@ -631,7 +631,7 @@ async def remove_watcher(
     username: str = Query(...),
     request: Request = None,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Remove a watcher from an issue."""
     issue = await issue_service.get_issue(db, issueIdOrKey)

@@ -40,7 +40,7 @@ async def create_user(
     body: CreateUserRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create a new user."""
     settings = get_settings()
@@ -73,7 +73,7 @@ async def get_user(
     username: str = Query(...),
     request: Request = None,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get a user by username."""
     settings = get_settings()
@@ -95,7 +95,7 @@ async def update_user(
     username: str = Query(...),
     request: Request = None,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Update a user's email and/or display name."""
     settings = get_settings()
@@ -127,7 +127,7 @@ async def admin_change_password(
     username: str = Query(...),
     request: Request = None,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Admin: change a user's password."""
     user = await user_service.get_user_by_username(db, username)
@@ -159,7 +159,7 @@ async def search_assignable_users(
     project: str | None = Query(default=None),
     username: str | None = Query(default=None),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Search for users that can be assigned to issues."""
     settings = get_settings()

@@ -54,7 +54,7 @@ async def upload_attachments(
     issueIdOrKey: str,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     x_atlassian_token: str | None = Header(default=None, alias="X-Atlassian-Token"),
 ):
     """Attach one or more files to an issue (multipart/form-data)."""
@@ -154,7 +154,7 @@ async def upload_attachments(
 async def get_attachment_meta(
     attachment_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     settings = get_settings()
     base_url = settings.BASE_URL
@@ -178,7 +178,7 @@ async def get_attachment_meta(
 async def delete_attachment(
     attachment_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     settings = get_settings()
 
@@ -230,7 +230,7 @@ async def delete_attachment(
 async def get_attachment_content(
     attachment_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     settings = get_settings()
 
@@ -263,7 +263,7 @@ async def get_attachment_content(
 async def get_attachment_thumbnail(
     attachment_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     settings = get_settings()
 

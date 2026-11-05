@@ -60,7 +60,7 @@ async def get_myself(
 async def change_own_password(
     body: ChangePasswordRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Change the current user's own password."""
     success = await auth_service.change_password(
@@ -83,7 +83,7 @@ async def change_own_password(
 @router.post("/rest/auth/1/session")
 async def session_login(
     body: SessionLoginRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Cookie-based login. Validates credentials and returns a session token."""
     settings = get_settings()
@@ -130,7 +130,7 @@ async def session_login(
 @router.get("/rest/auth/1/session")
 async def get_session(
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Return the current session user, or 401 if not authenticated."""
     settings = get_settings()

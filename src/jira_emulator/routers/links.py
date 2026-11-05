@@ -25,7 +25,7 @@ def _jira_error(messages: list[str], errors: dict | None = None) -> dict:
 async def create_issue_link(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create an issue link between two issues.
 
@@ -124,7 +124,7 @@ async def create_issue_link(
 async def delete_issue_link(
     link_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete an issue link by ID."""
     result = await db.execute(select(IssueLink).where(IssueLink.id == link_id))
@@ -156,7 +156,7 @@ async def delete_issue_link(
 async def list_issue_link_types(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all issue link types."""
     settings = get_settings()

@@ -115,7 +115,7 @@ def _page(items: list[dict], start_at: int, max_results: int, self_url: str) -> 
 async def list_projects(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all projects."""
     settings = get_settings()
@@ -143,7 +143,7 @@ async def get_project(
     projectIdOrKey: str,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get project details including components, issue types, and versions."""
     settings = get_settings()
@@ -207,7 +207,7 @@ async def list_project_components(
     projectIdOrKey: str,
     componentSource: str | None = None,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Return all components in a project."""
     settings = get_settings()
@@ -225,7 +225,7 @@ async def list_project_components_paginated(
     query: str | None = None,
     componentSource: str | None = None,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Return a paginated list of project components."""
     settings = get_settings()
@@ -253,7 +253,7 @@ async def list_components(
     query: str | None = None,
     projectIdsOrKeys: list[str] | None = Query(None),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Return a paginated list of components across projects."""
     settings = get_settings()
@@ -283,7 +283,7 @@ async def list_components(
 async def create_component(
     body: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create a project component."""
     name = body.get("name")
@@ -318,7 +318,7 @@ async def create_component(
 async def create_version(
     body: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create a project version, idempotently, for REST-backed environment seeding."""
     name = body.get("name")
@@ -353,7 +353,7 @@ async def create_version(
 async def get_component_related_issue_counts(
     component_id: str,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Return the count of issues assigned to a component."""
     component = await _get_component(db, component_id)
@@ -367,7 +367,7 @@ async def get_component_related_issue_counts(
 async def get_component(
     component_id: str,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Return one component."""
     return _component_json(await _get_component(db, component_id), get_settings().BASE_URL)
@@ -378,7 +378,7 @@ async def update_component(
     component_id: str,
     body: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Update one component."""
     component = await _get_component(db, component_id)
@@ -425,7 +425,7 @@ async def delete_component(
     component_id: str,
     moveIssuesTo: str | None = None,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete one component, optionally moving issue associations."""
     component = await _get_component(db, component_id)

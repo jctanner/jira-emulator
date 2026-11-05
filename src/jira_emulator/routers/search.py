@@ -27,7 +27,7 @@ async def search_issues_post(
     body: SearchRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Search for issues via JQL (POST).
 
@@ -64,7 +64,7 @@ async def search_issues_get(
     fields: str | None = Query(default=None),
     nextPageToken: str | None = Query(default=None),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Search for issues via JQL (GET).
 

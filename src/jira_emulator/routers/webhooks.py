@@ -17,7 +17,7 @@ admin_router = APIRouter(prefix="/rest/webhooks/1.0")
 
 @api_router.post("/webhook")
 async def register_dynamic(
-    body: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    body: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db, scope="function")
 ):
     results = await webhook_service.create_dynamic(db, body, current_user.id)
     return {"webhookRegistrationResult": results}
@@ -28,7 +28,7 @@ async def list_dynamic(
     startAt: int = Query(0, ge=0),
     maxResults: int = Query(100, ge=1, le=100),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     rows = (
         (
@@ -53,7 +53,7 @@ async def list_dynamic(
 
 @api_router.delete("/webhook", status_code=202)
 async def delete_dynamic(
-    body: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    body: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db, scope="function")
 ):
     ids = body.get("webhookIds") or []
     if not isinstance(ids, list):
@@ -76,7 +76,7 @@ async def delete_dynamic(
 
 @api_router.put("/webhook/refresh")
 async def refresh_dynamic(
-    body: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    body: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db, scope="function")
 ):
     ids = body.get("webhookIds") or []
     rows = (
@@ -101,7 +101,7 @@ async def failed_dynamic(
     maxResults: int = Query(100, ge=1, le=100),
     after: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     rows = (
         (
@@ -135,21 +135,25 @@ async def failed_dynamic(
 
 @admin_router.post("/webhook", status_code=201)
 async def create_admin_webhook(
-    body: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    body: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db, scope="function")
 ):
     row = await webhook_service.create_admin(db, body)
     return webhook_service._admin_json(row, get_settings().BASE_URL)
 
 
 @admin_router.get("/webhook")
-async def list_admin_webhooks(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def list_admin_webhooks(
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db, scope="function")
+):
     rows = (await db.execute(select(Webhook).where(Webhook.kind == "admin").order_by(Webhook.id))).scalars().all()
     return [webhook_service._admin_json(row, get_settings().BASE_URL) for row in rows]
 
 
 @admin_router.get("/webhook/{webhook_id}")
 async def get_admin_webhook(
-    webhook_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    webhook_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     row = await db.get(Webhook, webhook_id)
     if row is None or row.kind != "admin":
@@ -159,7 +163,10 @@ async def get_admin_webhook(
 
 @admin_router.put("/webhook/{webhook_id}")
 async def update_admin_webhook(
-    webhook_id: int, body: dict, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    webhook_id: int,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     row = await db.get(Webhook, webhook_id)
     if row is None or row.kind != "admin":
@@ -178,7 +185,9 @@ async def update_admin_webhook(
 
 @admin_router.delete("/webhook/{webhook_id}", status_code=204)
 async def delete_admin_webhook(
-    webhook_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    webhook_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     row = await db.get(Webhook, webhook_id)
     if row is None or row.kind != "admin":

@@ -226,7 +226,7 @@ SYSTEM_FIELDS = [
 async def list_fields(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all fields (system + custom)."""
     # Start with a copy of system fields

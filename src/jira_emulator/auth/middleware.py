@@ -50,7 +50,7 @@ def _extract_username(username_or_email: str) -> str:
 
 async def get_current_user(
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> User:
     """FastAPI dependency that resolves the current user from the request.
 
