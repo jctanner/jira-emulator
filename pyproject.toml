@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "jira-emulator"
 version = "0.1.0"
 description = "A lightweight Jira REST API v2 emulator for offline development and testing"
+license = {text = "Apache-2.0"}
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.110",
