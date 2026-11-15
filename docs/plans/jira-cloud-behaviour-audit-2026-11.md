@@ -1,7 +1,7 @@
 # Jira Cloud behaviour audit, 2025-01 to 2026-11 (CC-63)
 
-Status: research complete; fixes F1–F6 implemented on the local branch
-`cc-63-jira-cloud-fidelity`; F7–F12 proposed only.
+Status: research complete. F1–F6 merged in #18; F7–F11 merged in #28–#31
+(issues #20–#24); F12 closed until the emulator has comment update (#25).
 
 ## Purpose
 
@@ -134,12 +134,12 @@ and, where relevant, MCP.
 | F4 | CHANGE-3440: on string custom fields, `=`, `IN`, and `NOT IN` match the phrase anywhere in the value, case-insensitive, on word boundaries. Select and option fields keep exact matching. | REST v2 and v3: phrase inside a longer value matches, word order is enforced, case is ignored. Select-field equality stays exact. | Implemented |
 | F5 | JQL aliases `space`, `workType`, `workItemKey`, `workItem`, and `id`. | REST v2 and v3: each alias returns the same results as its canonical field. | Implemented |
 | F6 | `GET /label` with `startAt`/`maxResults` and a `query` prefix filter. | REST v2 and v3: distinct sorted values, paging, case-insensitive prefix. | Implemented |
-| F7 | Optional rate-limit fault injection, such as `RATE_LIMIT_FAULT=...`, returning 429 with Cloud headers. | Header names and values on a 429 | Proposed |
-| F8 | `POST /issue/bulkfetch` with the 100/1000 limit rules. | Limit selection and 400 above the limit | Proposed |
-| F9 | `LEGACY_SEARCH=removed` setting makes `/search` return 410 with Cloud's message. The default stays enabled. | Both settings | Proposed |
-| F10 | Confirm no `Epic Link`/`Parent Link` fields are exposed through `/field` or createmeta. | `/field` assertion | Proposed |
-| F11 | Reject the Epic and Sub-task link types on `POST /issueLink` if they are ever seeded. | — | Proposed |
-| F12 | Child comment visibility inheritance, when comment update is implemented. | — | Proposed |
+| F7 | Optional rate-limit fault injection, such as `RATE_LIMIT_FAULT=...`, returning 429 with Cloud headers. | Header names and values on a 429 | Merged (#30, issue #20) |
+| F8 | `POST /issue/bulkfetch` with the 100/1000 limit rules. | Limit selection and 400 above the limit | Merged (#29, issue #21) |
+| F9 | `LEGACY_SEARCH=removed` setting makes `/search` return 410 with Cloud's message. The default stays enabled. | Both settings | Merged (#31, issue #22) |
+| F10 | Confirm no `Epic Link`/`Parent Link` fields are exposed through `/field` or createmeta. | `/field` assertion | Merged (#28, issue #23) |
+| F11 | Reject the Epic and Sub-task link types on `POST /issueLink` if they are ever seeded. | — | Merged (#28, issue #24) |
+| F12 | Child comment visibility inheritance, when comment update is implemented. | — | Closed (issue #25): no comment update endpoint yet |
 
 Not proposed:
 

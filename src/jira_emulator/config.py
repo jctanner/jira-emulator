@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     REQUEST_AUDIT_MAX_BODY_BYTES: int = Field(default=131072, ge=0)
     # Optional 429 fault injection (rate_limit_fault.py). Empty: off.
     RATE_LIMIT_FAULT: str = ""
+    # "removed" makes the legacy search APIs return 410 as Jira Cloud's do
+    # (CHANGE-2046, CHANGE-2598). The default keeps them for existing clients.
+    LEGACY_SEARCH: Literal["enabled", "removed"] = "enabled"
     WEBHOOKS_ENABLED: bool = True
     WEBHOOK_ALLOW_INSECURE_HTTP: bool = False
     WEBHOOK_ALLOW_PRIVATE_NETWORKS: bool = False

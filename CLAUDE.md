@@ -86,6 +86,7 @@ references/           # Jira API specs, JQL spec, auth spec, workflow research
 | `REQUEST_AUDIT_MAX_ENTRIES` | `2000` | Request audit size; `0` disables |
 | `REQUEST_AUDIT_MAX_BODY_BYTES` | `131072` | Request body bytes kept per audit entry |
 | `RATE_LIMIT_FAULT` | empty (off) | Return Jira Cloud 429s with its rate-limit headers, e.g. `reason=jira-burst-based,every=3,methods=POST`; options in `rate_limit_fault.py` |
+| `LEGACY_SEARCH` | `enabled` | `removed` makes `/search`, `/search/id` and `/expression/eval` return Jira Cloud's 410 (the MCP search tool uses `/search`, so it fails too) |
 
 ## Database Snapshots (Containerized Mode)
 

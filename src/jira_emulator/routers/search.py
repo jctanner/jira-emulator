@@ -8,6 +8,11 @@
   v3 alike: cursor pagination, no ``total``, bounded JQL, ``id``-only
   fields by default.
 * ``/search/approximate-count`` (POST).
+
+With ``LEGACY_SEARCH=removed``, ``/search``, ``/search/id`` and
+``/expression/eval`` return 410 with Jira Cloud's message, so CI can prove a
+client works on Cloud. The emulator implements neither ``/search/id`` nor
+``/expression/eval``; they exist here only to return that 410.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -16,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from jira_emulator.auth.middleware import get_current_user
 from jira_emulator.config import get_settings
 from jira_emulator.database import get_db
+from jira_emulator.exceptions import LegacyApiRemovedError
 from jira_emulator.models.user import User
 from jira_emulator.schemas.search import ApproximateCountRequest, SearchJqlRequest, SearchRequest
 from jira_emulator.services import search_service
@@ -31,7 +37,20 @@ def _get_api_version(request: Request) -> int:
     return getattr(request.state, "api_version", 2)
 
 
-@router.post("/search")
+def legacy_search_available() -> None:
+    """Dependency: raise Jira Cloud's 410 when ``LEGACY_SEARCH=removed``."""
+    if get_settings().LEGACY_SEARCH == "removed":
+        raise LegacyApiRemovedError()
+
+
+@router.post("/search/id", dependencies=[Depends(legacy_search_available)])
+@router.post("/expression/eval", dependencies=[Depends(legacy_search_available)])
+async def removed_cloud_api(current_user: User = Depends(get_current_user)):
+    """Never implemented here; 404 unless ``LEGACY_SEARCH=removed`` makes it 410."""
+    raise HTTPException(status_code=404, detail="Not Found")
+
+
+@router.post("/search", dependencies=[Depends(legacy_search_available)])
 async def search_issues_post(
     body: SearchRequest,
     request: Request,
@@ -60,7 +79,7 @@ async def search_issues_post(
         )
 
 
-@router.get("/search")
+@router.get("/search", dependencies=[Depends(legacy_search_available)])
 async def search_issues_get(
     request: Request,
     jql: str = Query(default=""),
