@@ -26,9 +26,11 @@ jobs:
       matrix:
         include:
           - variant: default
+            port: 8080
             dockerfile: Dockerfile
             image: ghcr.io/${{ github.repository }}
           - variant: k3s
+            port: 80
             dockerfile: Dockerfile.k3s
             image: ghcr.io/${{ github.repository }}-k3s
     steps:
@@ -59,8 +61,17 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
       - name: Smoke test
+        env:
+          VARIANT: ${{ matrix.variant }}
+          CONTAINER_PORT: ${{ matrix.port }}
         run: |
-          docker run -d --name release-smoke -p 127.0.0.1:8080:8080 release-smoke:local
+          extra=()
+          if [[ "$VARIANT" == k3s ]]; then
+            printf ':80 {\n  reverse_proxy 127.0.0.1:8080\n}\n' > smoke.Caddyfile
+            chmod 644 smoke.Caddyfile
+            extra=(-v "$PWD/smoke.Caddyfile:/etc/caddy/Caddyfile:ro")
+          fi
+          docker run -d --name release-smoke -p "127.0.0.1:8080:$CONTAINER_PORT" "${extra[@]}" release-smoke:local
           for _ in $(seq 1 30); do
             if curl --max-time 2 -fsS http://127.0.0.1:8080/rest/api/2/priority > /dev/null; then
               exit 0
