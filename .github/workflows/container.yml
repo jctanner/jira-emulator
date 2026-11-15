@@ -38,6 +38,8 @@ jobs:
       - name: Validate release tag
         if: startsWith(github.ref, 'refs/tags/')
         run: python3 scripts/release_version.py "$GITHUB_REF_NAME"
+      - name: Publication policy regression tests
+        run: python3 -m unittest discover -s scripts -p test_publish_image.py -v
       - uses: docker/setup-buildx-action@v3
       - id: meta
         uses: docker/metadata-action@v5
@@ -96,26 +98,7 @@ jobs:
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           IMAGE_REPOSITORY: ${{ matrix.image }}
-        run: |
-          set -euo pipefail
-          image="${IMAGE_REPOSITORY,,}"
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            if docker manifest inspect "$image:$GITHUB_REF_NAME" > /dev/null 2>manifest-error; then
-              echo "Release image already exists; immutable tags cannot be republished."
-              exit 1
-            fi
-            if ! grep -Eqi 'manifest unknown|no such manifest|not found' manifest-error; then
-              cat manifest-error
-              exit 1
-            fi
-          fi
-          while IFS= read -r tag; do
-            docker tag release-smoke:local "$tag"
-            docker push "$tag"
-          done <<< "$TAGS"
-          digest=$(docker image inspect release-smoke:local --format '{{index .RepoDigests 0}}')
-          echo "image=$digest" >> "$GITHUB_OUTPUT"
-          printf '%s\n' "$digest" > image.txt
+        run: bash scripts/publish_image.sh
       - name: Record published image
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
