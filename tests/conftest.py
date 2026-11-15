@@ -5,7 +5,10 @@ loaded via the application lifespan.  The async HTTP client talks directly
 to the ASGI app -- no real network socket is opened.
 """
 
+import atexit
 import os
+import shutil
+import tempfile
 from collections.abc import AsyncIterator
 
 import httpx
@@ -18,6 +21,12 @@ import pytest
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite://"
 os.environ["AUTH_MODE"] = "permissive"
 os.environ["SEED_DATA"] = "true"
+# The default, /data/attachments, is the container volume and is not writable
+# on CI runners or developer machines. Tests that need their own directory
+# still override this with monkeypatch.
+_ATTACHMENT_DIR = tempfile.mkdtemp(prefix="jira-emulator-test-attachments-")
+atexit.register(shutil.rmtree, _ATTACHMENT_DIR, ignore_errors=True)
+os.environ["ATTACHMENT_DIR"] = _ATTACHMENT_DIR
 
 # Base64-encoded "admin:admin"
 AUTH_HEADER = {"Authorization": "Basic YWRtaW46YWRtaW4="}
