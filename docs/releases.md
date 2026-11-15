@@ -13,7 +13,10 @@ builds a Linux amd64 image once, smoke-tests it, then pushes that same local
 image to GHCR. Only then does the reusable release workflow create a GitHub
 release with generated notes, the source commit and the image digest.
 
-`ghcr.io/jctanner/jira-emulator:latest` follows successful main builds.
+Both `ghcr.io/jctanner/jira-emulator` (standalone) and
+`ghcr.io/jctanner/jira-emulator-k3s` (Breadboard TLS/Caddy configuration) are
+built and smoke-tested. The release waits for both variants and lists both
+digests. Each repository's `latest` follows successful main builds.
 `sha-<full commit SHA>` identifies the source revision. Releases also get their
 exact CalVer tag; they do not update `latest`. Pull requests only build and
 smoke-test. Manual runs on feature branches do not publish. Package visibility
