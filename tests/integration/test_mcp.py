@@ -132,3 +132,22 @@ async def test_mcp_search_labels_not_in_excludes_unlabelled(
         assert not result.isError
         data = json.loads(result.content[0].text)
         assert {issue["key"] for issue in data["issues"]} == {keys["keep"]}
+
+
+async def test_mcp_issue_uses_parent_not_epic_link(mcp_sse_url: str, client: httpx.AsyncClient, auth_header: dict):
+    """CHANGE-2401: issues carry ``parent``; there is no Epic Link or Parent Link field."""
+
+    async def create(fields: dict) -> str:
+        resp = await client.post("/rest/api/2/issue", json={"fields": fields}, headers=auth_header)
+        assert resp.status_code == 201, resp.text
+        return resp.json()["key"]
+
+    epic = await create({"project": {"key": "TEST"}, "issuetype": {"name": "Epic"}, "summary": "Epic"})
+    story = await create(
+        {"project": {"key": "TEST"}, "issuetype": {"name": "Story"}, "summary": "Story", "parent": {"key": epic}}
+    )
+    async with _mcp_session(mcp_sse_url) as session:
+        result = await session.call_tool("getJiraIssue", {"issueIdOrKey": story})
+    assert not result.isError
+    fields = json.loads(result.content[0].text)["fields"]
+    assert fields["parent"]["key"] == epic

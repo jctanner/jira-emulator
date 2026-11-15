@@ -18,6 +18,15 @@ from jira_emulator.services.webhook_service import enqueue_event
 router = APIRouter(prefix="/rest/api/2")
 
 
+# Jira's system link types for Epic-to-child and parent-to-sub-task links.
+# Since CHANGE-2398 (2025-03-14) POST /issueLink rejects them: these
+# relationships are set with the child's ``parent`` field instead.
+_PARENT_LINK_TYPE_NAMES = frozenset({"epic-story link", "jira_subtask_link"})
+PARENT_LINK_TYPE_MESSAGE = (
+    "Epic and Sub-task link types can't be used to create issue links. Set the parent field of the child issue instead."
+)
+
+
 def _jira_error(messages: list[str], errors: dict | None = None) -> dict:
     return {"errorMessages": messages, "errors": errors or {}}
 
@@ -72,6 +81,8 @@ async def create_issue_link(
     type_name = type_data.get("name")
     if not type_name:
         raise HTTPException(status_code=400, detail=_jira_error(["type.name is required"]))
+    if type_name.casefold() in _PARENT_LINK_TYPE_NAMES:
+        raise HTTPException(status_code=400, detail=_jira_error([PARENT_LINK_TYPE_MESSAGE]))
 
     result = await db.execute(select(IssueLinkType).where(IssueLinkType.name == type_name))
     link_type = result.scalar_one_or_none()
