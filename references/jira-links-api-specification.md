@@ -189,6 +189,75 @@ When fetching an issue, links appear in `fields.issuelinks`:
 
 Each link object contains either `inwardIssue` or `outwardIssue` (never both) depending on the perspective of the current issue.
 
+### Link direction (create request vs. GET)
+
+The create request's field names read the opposite way to the GET
+representation, and are easy to swap by mistake. Atlassian's own MCP server
+had this report (atlassian/atlassian-mcp-server#112, March 2026).
+
+- `POST /issueLink` with `inwardIssue: A`, `outwardIssue: B` creates
+  "A *outward* B". For Cloners, that is "A clones B".
+- In Jira's model, A is the link's **source** and B its **destination**.
+- `GET A` shows B under `outwardIssue`, labelled with the type's `outward`
+  text: "clones B".
+- `GET B` shows A under `inwardIssue`, labelled with the type's `inward`
+  text: "is cloned by A".
+- A cloned issue clones its original. For an RHAISTRAT generated from an
+  RHAIRFE, the request is `inwardIssue: RHAISTRAT`, `outwardIssue: RHAIRFE`.
+  This is what strat-creator sends.
+
+Sources:
+
+- A live Red Hat Jira probe, recorded in
+  `docs/bugs/strat-creator-clone-bug.md`.
+- JRASERVER-34913: clones link "from clone to original issue".
+- JRACLOUD-98338 (May 2026): the request's `inwardIssue` is the "from" side.
+- <https://developer.atlassian.com/cloud/jira/platform/issue-linking-model/>.
+
+The emulator stores the request's `inwardIssue` as `inward_issue_id`.
+
+### Link webhooks
+
+`issuelink_created` and `issuelink_deleted` carry the link as Jira sends it.
+Ids are numbers, unlike in the REST resources:
+
+```json
+{
+  "timestamp": 1731628800000,
+  "webhookEvent": "issuelink_created",
+  "issueLink": {
+    "id": 10001,
+    "sourceIssueId": 10010,
+    "destinationIssueId": 10002,
+    "issueLinkType": {
+      "id": 10000, "name": "Cloners", "outwardName": "clones", "inwardName": "is cloned by",
+      "style": null, "isSubTaskLinkType": false, "isSystemLinkType": false
+    },
+    "systemLink": false
+  }
+}
+```
+
+- `sourceIssueId` is the create request's `inwardIssue`, so "source clones
+  destination".
+- The delete event serializes the link before removing it.
+- Webhook URLs may use the `{sourceIssue.key}` and `{destinationIssue.key}`
+  variables.
+- Atlassian publishes no schema for this payload. The shape follows payloads
+  posted by Jira Cloud users, for example
+  <https://community.atlassian.com/forums/Jira-questions/Distinguish-between-subtask-created-and-issue-linked/qaq-p/1332926>.
+- Jira's `sequence` field is omitted because the emulator does not model link
+  ordering.
+
+### Permissions (not modelled)
+
+Since 2025-11-24 (CHANGE-2737), Jira Cloud requires the **Link Issues**
+permission on *both* issues. Previously only the outward issue needed it.
+
+The emulator does not model per-project permissions: any authenticated user
+can link any two issues. That is deliberate. Mirror this rule only if
+project permission schemes are added.
+
 ---
 
 ## Part 2: Issue Link Types
