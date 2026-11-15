@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,7 +23,7 @@ from jira_emulator.schemas.issue import (
     TransitionRequest,
     UpdateIssueRequest,
 )
-from jira_emulator.services import history_service, issue_service
+from jira_emulator.services import bulkfetch_service, history_service, issue_service
 from jira_emulator.services.issue_service import _format_rich_field
 from jira_emulator.services.user_service import get_or_create_user
 from jira_emulator.services.webhook_service import enqueue_event
@@ -111,6 +112,41 @@ async def create_issue(
         "key": issue.key,
         "self": f"{base_url}/rest/api/2/issue/{issue.id}",
     }
+
+
+class BulkFetchRequest(BaseModel):
+    """Jira's ``BulkFetchIssueRequestBean``. ``expand`` is a list here, unlike elsewhere."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    issueIdsOrKeys: list[str] = Field(default_factory=list)
+    fields: list[str] | None = None
+    expand: list[str] | None = None
+    properties: list[str] | None = None
+    fieldsByKeys: bool = False
+
+
+@router.post("/issue/bulkfetch")
+async def bulk_fetch_issues(
+    body: BulkFetchRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Fetch up to 100 issues, or 1000 for an efficient request, in ascending id order.
+
+    A ``ValueError`` (too many or no issues, too many property keys) becomes
+    Jira's 400 error response through the app's handler.
+    """
+    return await bulkfetch_service.bulk_fetch(
+        db,
+        issue_ids_or_keys=body.issueIdsOrKeys,
+        fields=body.fields,
+        expand=body.expand,
+        properties=body.properties,
+        base_url=get_settings().BASE_URL,
+        api_version=_get_api_version(request),
+    )
 
 
 @router.get("/issue/{issueIdOrKey}")
