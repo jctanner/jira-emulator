@@ -199,7 +199,9 @@ Not proposed:
   - `tests/integration/test_mcp.py` adds an MCP check for F1 and F5.
   - Existing tests that read `total` or full fields from `/search/jql`
     were updated to Cloud's contract.
-- **Integration runner.** `make integration` can hang after the tests pass.
-  honcho raises `RuntimeError: reentrant call inside
-  <_io.BufferedWriter name='<stdout>'>` on teardown under Python 3.14,
-  which leaves the API and MCP servers running.
+- **Integration runner.** `make integration` could hang after the tests
+  passed. Under Python 3.14, multiprocessing defaults to forkserver, so
+  honcho's runners escaped the runner's process-group kill, and honcho could
+  crash on teardown. Fixed separately on branch
+  `fix-integration-runner-teardown`, which starts the servers directly and
+  stops them by PID.
