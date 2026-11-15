@@ -1,6 +1,7 @@
 """Webhook registration and durable event capture tests."""
 
 import httpx
+import pytest
 
 from tests.conftest import AUTH_HEADER
 
@@ -101,3 +102,76 @@ async def test_issue_creation_enqueues_matching_webhook(client: httpx.AsyncClien
         assert len(rows) == 1
         assert rows[0].url.endswith(response.json()["key"])
         assert '"webhookEvent":"jira:issue_created"' in rows[0].payload
+
+
+@pytest.mark.parametrize("v", [2, 3])
+async def test_issuelink_webhooks_use_jira_source_destination_shape(client: httpx.AsyncClient, v: int):
+    """issuelink_* payloads match Jira: source "clones" destination."""
+    import json
+
+    from sqlalchemy import select
+
+    from jira_emulator.database import get_session_factory
+    from jira_emulator.models.webhook import WebhookOutbox
+
+    await client.post(
+        "/rest/webhooks/1.0/webhook",
+        json={
+            "name": "Links",
+            "url": "https://example.test/{sourceIssue.key}/{destinationIssue.key}",
+            "events": ["issuelink_created", "issuelink_deleted"],
+        },
+        headers=AUTH_HEADER,
+    )
+
+    async def create(project: str, issuetype: str) -> dict:
+        resp = await client.post(
+            "/rest/api/2/issue",
+            json={"fields": {"project": {"key": project}, "issuetype": {"name": issuetype}, "summary": project}},
+            headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 201
+        return resp.json()
+
+    rfe = await create("RHAIRFE", "Feature Request")
+    strat = await create("RHAISTRAT", "Feature")
+    # strat-creator's payload: RHAISTRAT clones RHAIRFE.
+    resp = await client.post(
+        f"/rest/api/{v}/issueLink",
+        json={"type": {"name": "Cloners"}, "inwardIssue": {"key": strat["key"]}, "outwardIssue": {"key": rfe["key"]}},
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 201
+    links = (await client.get(f"/rest/api/{v}/issue/{strat['key']}", headers=AUTH_HEADER)).json()["fields"][
+        "issuelinks"
+    ]
+    assert links[0]["outwardIssue"]["key"] == rfe["key"]  # GET: STRAT "clones" RFE
+    link_id = links[0]["id"]
+    assert (await client.delete(f"/rest/api/{v}/issueLink/{link_id}", headers=AUTH_HEADER)).status_code == 204
+
+    async with get_session_factory()() as db:
+        rows = (await db.execute(select(WebhookOutbox).order_by(WebhookOutbox.created_at))).scalars().all()
+    by_event = {row.event: row for row in rows}
+    assert set(by_event) == {"issuelink_created", "issuelink_deleted"}
+
+    expected_link = {
+        "id": int(link_id),
+        "sourceIssueId": int(strat["id"]),
+        "destinationIssueId": int(rfe["id"]),
+        "issueLinkType": {
+            "id": int(links[0]["type"]["id"]),
+            "name": "Cloners",
+            "outwardName": "clones",
+            "inwardName": "is cloned by",
+            "style": None,
+            "isSubTaskLinkType": False,
+            "isSystemLinkType": False,
+        },
+        "systemLink": False,
+    }
+    for event, row in by_event.items():
+        body = json.loads(row.payload)
+        assert body["webhookEvent"] == event
+        assert body["issueLink"] == expected_link
+        assert "urlContext" not in body
+        assert row.url == f"https://example.test/{strat['key']}/{rfe['key']}"

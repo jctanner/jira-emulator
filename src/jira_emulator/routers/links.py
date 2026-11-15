@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from jira_emulator.auth.middleware import get_current_user
 from jira_emulator.config import get_settings
 from jira_emulator.database import get_db
+from jira_emulator.models.issue import Issue
 from jira_emulator.models.link import IssueLink, IssueLinkType
 from jira_emulator.models.user import User
 from jira_emulator.services import issue_service
@@ -19,6 +20,32 @@ router = APIRouter(prefix="/rest/api/2")
 
 def _jira_error(messages: list[str], errors: dict | None = None) -> dict:
     return {"errorMessages": messages, "errors": errors or {}}
+
+
+def _webhook_issue_link(link: IssueLink, link_type: IssueLinkType) -> dict:
+    """Serialize a link the way Jira's ``issuelink_*`` webhooks do.
+
+    The *source* issue is the one the outward description reads from
+    ("source clones destination"). In a ``POST /issueLink`` request that is
+    ``inwardIssue``, which the emulator stores as ``inward_issue_id``, the
+    same issue that ``GET`` shows the other one under ``outwardIssue``.
+    Ids are numbers in Jira's webhook payload, unlike the REST resources.
+    """
+    return {
+        "id": link.id,
+        "sourceIssueId": link.inward_issue_id,
+        "destinationIssueId": link.outward_issue_id,
+        "issueLinkType": {
+            "id": link_type.id,
+            "name": link_type.name,
+            "outwardName": link_type.outward_description or "",
+            "inwardName": link_type.inward_description or "",
+            "style": None,
+            "isSubTaskLinkType": False,
+            "isSystemLinkType": False,
+        },
+        "systemLink": False,
+    }
 
 
 @router.post("/issueLink", status_code=201)
@@ -105,12 +132,7 @@ async def create_issue_link(
         {
             "timestamp": int(datetime.utcnow().timestamp() * 1000),
             "webhookEvent": "issuelink_created",
-            "issueLink": {
-                "id": str(link.id),
-                "type": {"name": link_type.name},
-                "inwardIssue": {"key": inward_issue.key},
-                "outwardIssue": {"key": outward_issue.key},
-            },
+            "issueLink": _webhook_issue_link(link, link_type),
             "urlContext": {"sourceIssue.key": inward_issue.key, "destinationIssue.key": outward_issue.key},
         },
         project_id=inward_issue.project_id,
@@ -135,18 +157,29 @@ async def delete_issue_link(
             detail=_jira_error([f"Issue link with id '{link_id}' not found"]),
         )
 
+    # Serialize before deleting, so the event describes the removed link.
+    link_type = await db.get(IssueLinkType, link.link_type_id)
+    source = await db.get(Issue, link.inward_issue_id)
+    destination = await db.get(Issue, link.outward_issue_id)
+    payload = {
+        "timestamp": int(datetime.utcnow().timestamp() * 1000),
+        "webhookEvent": "issuelink_deleted",
+        "issueLink": _webhook_issue_link(link, link_type),
+        "urlContext": {
+            "sourceIssue.key": source.key if source else "",
+            "destinationIssue.key": destination.key if destination else "",
+        },
+    }
+    project_id = source.project_id if source else None
+
     await db.delete(link)
     await db.flush()
     await enqueue_event(
         db,
         "issuelink_deleted",
-        {
-            "timestamp": int(datetime.utcnow().timestamp() * 1000),
-            "webhookEvent": "issuelink_deleted",
-            "issueLink": {"id": str(link.id)},
-            "urlContext": {},
-        },
-        project_id=None,
+        payload,
+        project_id=project_id,
+        issue_fields={"issueKey": source.key} if source else None,
     )
 
     return Response(status_code=204)
