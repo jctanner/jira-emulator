@@ -9,9 +9,11 @@ This document records an investigation into whether `strat-creator` creates
 into an `RHAISTRAT` ticket.
 
 The hypothesis was invalidated by live Red Hat Jira testing. The public
-`strat-creator` payload shape is correct for real Jira. The remaining bug is in
-`jira-emulator` GET issue-link serialization, which currently reports the
-relationship direction opposite to real Jira.
+`strat-creator` payload shape is correct for real Jira.
+
+The emulator bug this investigation found was in GET issue-link
+serialization. It was fixed in `7050bd9` (2026-07-10) and re-verified on
+2026-11-14; see `reversed-issue-link-directions.md`.
 
 ## Original hypothesis
 
@@ -137,7 +139,7 @@ Real Jira behavior:
 
 At the time of this investigation,
 `src/jira_emulator/services/issue_service.py` had those response field names
-reversed.
+reversed. Fixed in `7050bd9`.
 
 ## Acceptance criteria for the emulator fix
 

@@ -29,6 +29,7 @@ from jira_emulator.models.sprint import IssueSprint, Sprint
 from jira_emulator.models.status import Status
 from jira_emulator.models.user import User
 from jira_emulator.models.version import IssueAffectsVersion, IssueFixVersion, Version
+from jira_emulator.services.issue_service import next_link_sequence
 from jira_emulator.services.user_service import get_or_create_user, slugify_username
 
 logger = logging.getLogger(__name__)
@@ -836,6 +837,7 @@ async def _resolve_issue_links(db: AsyncSession, deferred_links: list[dict]) -> 
                     link_type_id=link_type.id,
                     inward_issue_id=inward_issue.id,
                     outward_issue_id=outward_issue.id,
+                    sequence=await next_link_sequence(db, inward_issue.id),
                 )
             )
         except Exception as exc:

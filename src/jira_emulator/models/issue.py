@@ -47,10 +47,16 @@ class Issue(Base):
     watchers: Mapped[list["Watcher"]] = relationship(cascade="all, delete-orphan")
     sprint_associations: Mapped[list["IssueSprint"]] = relationship(cascade="all, delete-orphan")
     outward_links: Mapped[list["IssueLink"]] = relationship(
-        foreign_keys="IssueLink.outward_issue_id", cascade="all, delete-orphan", overlaps="outward_issue"
+        foreign_keys="IssueLink.outward_issue_id",
+        cascade="all, delete-orphan",
+        overlaps="outward_issue",
+        order_by="IssueLink.id",
     )
     inward_links: Mapped[list["IssueLink"]] = relationship(
-        foreign_keys="IssueLink.inward_issue_id", cascade="all, delete-orphan", overlaps="inward_issue"
+        foreign_keys="IssueLink.inward_issue_id",
+        cascade="all, delete-orphan",
+        overlaps="inward_issue",
+        order_by="(IssueLink.sequence, IssueLink.id)",
     )
     history_entries: Mapped[list["IssueHistory"]] = relationship(back_populates="issue", cascade="all, delete-orphan")
     attachments: Mapped[list["Attachment"]] = relationship(back_populates="issue", cascade="all, delete-orphan")

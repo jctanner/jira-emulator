@@ -30,6 +30,10 @@ class IssueLink(Base):
     link_type_id: Mapped[int] = mapped_column(Integer, ForeignKey("issue_link_types.id"), nullable=False)
     inward_issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False)
     outward_issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False)
+    # Jira's per-source link order (``IssueLink.getSequence()``, and
+    # ``issueLink.sequence`` in webhooks). The source is the stored
+    # ``inward_issue_id``; new links go after that issue's existing ones.
+    sequence: Mapped[int | None] = mapped_column(Integer)
 
     link_type: Mapped["IssueLinkType"] = relationship()
     inward_issue: Mapped["Issue"] = relationship(foreign_keys=[inward_issue_id], overlaps="inward_links")

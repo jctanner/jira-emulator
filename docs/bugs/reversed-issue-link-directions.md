@@ -1,5 +1,50 @@
 # Reversed Issue Link Directions
 
+Status: Resolved
+
+## Resolution
+
+Fixed in two commits:
+
+- `d99f45d` (2026-07-08): Jira REST-format import keeps each imported
+  link on the side its source issue reported.
+- `7050bd9` (2026-07-10): `GET /rest/api/{2,3}/issue/{key}` serializes
+  `fields.issuelinks` with Jira's perspective. The stored inward issue
+  shows the other issue under `outwardIssue`, and the reverse.
+
+Tests:
+
+- `tests/test_links.py::test_blocks_link_response_matches_real_jira_direction`
+  and `test_cloners_link_response_matches_real_jira_direction`;
+- the import-direction tests in `tests/test_import.py`.
+
+Re-verified on 2026-11-14 against current `main`. A Cloners link created as
+`inwardIssue=RHAISTRAT`, `outwardIssue=RHAIRFE`, which is strat-creator's
+payload, renders:
+
+- `RHAISTRAT` "clones" `RHAIRFE`, under `outwardIssue`;
+- `RHAIRFE` "is cloned by" `RHAISTRAT`, under `inwardIssue`.
+
+This holds on REST v2, REST v3, and the web UI. It matches the live Red Hat
+Jira probe recorded in `strat-creator-clone-bug.md`. It also matches a real
+Red Hat Jira export in breadboard:
+`var/demos/dashboard-strat-arch-context-test/files/RHAIRFE-2259.json` shows
+`RHAISTRAT-1859` under `inwardIssue` from the RFE.
+
+Atlassian's public material is consistent:
+
+- JRASERVER-34913 says clones link "from clone to original issue".
+- JRACLOUD-98338 says the create request's `inwardIssue` acts as the "from"
+  side.
+- <https://developer.atlassian.com/cloud/jira/platform/issue-linking-model/>
+  says to label a GET `outwardIssue` with the link type's `outward` text.
+
+The `issuelink_created` and `issuelink_deleted` webhook payloads now use
+Jira's `sourceIssueId`/`destinationIssueId` shape. Source is the request's
+`inwardIssue`, so "source clones destination".
+
+The rest of this note is the original report, kept for history.
+
 ## Summary
 
 Some generated issue relationships appear to store the source and target issues in the wrong direction. This makes the REST API describe dependencies and clone relationships opposite to what the ticket content implies.

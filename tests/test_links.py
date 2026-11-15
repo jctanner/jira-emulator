@@ -252,3 +252,104 @@ async def test_work_item_split_link_type(client, api):
 
     links = (await client.get(f"/rest/api/{api}/issue/{parent['key']}", headers=AUTH)).json()["fields"]["issuelinks"]
     assert [link["type"]["name"] for link in links] == ["Work item split"]
+
+
+async def _link(client, api, type_name, source_key, destination_key):
+    resp = await client.post(
+        f"/rest/api/{api}/issueLink",
+        json={
+            "type": {"name": type_name},
+            "inwardIssue": {"key": source_key},
+            "outwardIssue": {"key": destination_key},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201
+
+
+async def _source_links(client, api, key):
+    """Return the issue's links where it is the source, as (key, id) pairs."""
+    resp = await client.get(f"/rest/api/{api}/issue/{key}", headers=AUTH)
+    return [
+        (link["outwardIssue"]["key"], link["id"])
+        for link in resp.json()["fields"]["issuelinks"]
+        if "outwardIssue" in link
+    ]
+
+
+async def _sequences(source_id):
+    from sqlalchemy import select
+
+    from jira_emulator.database import get_session_factory
+    from jira_emulator.models.link import IssueLink
+
+    async with get_session_factory()() as db:
+        rows = await db.execute(
+            select(IssueLink.id, IssueLink.sequence)
+            .where(IssueLink.inward_issue_id == source_id)
+            .order_by(IssueLink.id)
+        )
+        return [sequence for _, sequence in rows.all()]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api", ["2", "3"])
+async def test_links_keep_their_sequence_order(client, api):
+    """New links go after the source's existing ones; GET lists them in sequence order."""
+    from sqlalchemy import update
+
+    from jira_emulator.database import get_session_factory
+    from jira_emulator.models.link import IssueLink
+
+    source = await _create_issue(client, summary="Source")
+    b, c, d, e = [await _create_issue(client, summary=name) for name in "BCDE"]
+    # Sequences are per source issue, across link types.
+    await _link(client, api, "Blocks", source["key"], b["key"])
+    await _link(client, api, "Cloners", source["key"], c["key"])
+    await _link(client, api, "Blocks", source["key"], d["key"])
+    # A link from another source starts its own sequence.
+    await _link(client, api, "Blocks", b["key"], c["key"])
+    assert await _sequences(int(b["id"])) == [0]
+
+    links = await _source_links(client, api, source["key"])
+    assert [key for key, _ in links] == [b["key"], c["key"], d["key"]]
+    assert await _sequences(int(source["id"])) == [0, 1, 2]
+
+    # Deleting a link leaves a gap; the next link still goes last.
+    assert (await client.delete(f"/rest/api/{api}/issueLink/{links[1][1]}", headers=AUTH)).status_code == 204
+    await _link(client, api, "Relates", source["key"], e["key"])
+    assert await _sequences(int(source["id"])) == [0, 2, 3]
+
+    # The order follows sequence, not creation order.
+    async with get_session_factory()() as db:
+        await db.execute(update(IssueLink).where(IssueLink.id == int(links[0][1])).values(sequence=10))
+        await db.commit()
+    assert [key for key, _ in await _source_links(client, api, source["key"])] == [d["key"], e["key"], b["key"]]
+
+
+@pytest.mark.asyncio
+async def test_init_db_adds_and_backfills_link_sequence(tmp_path):
+    """A database from before link ordering gets the column, numbered in id order per source."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from jira_emulator.database import init_db
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'old.db'}")
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "CREATE TABLE issue_links (id INTEGER PRIMARY KEY, link_type_id INTEGER NOT NULL,"
+                    " inward_issue_id INTEGER NOT NULL, outward_issue_id INTEGER NOT NULL)"
+                )
+            )
+            await conn.execute(
+                text("INSERT INTO issue_links VALUES (1, 1, 7, 8), (2, 1, 9, 8), (3, 2, 7, 9), (4, 1, 7, 10)")
+            )
+        await init_db(engine)
+        async with engine.connect() as conn:
+            rows = (await conn.execute(text("SELECT id, sequence FROM issue_links ORDER BY id"))).all()
+        assert [tuple(row) for row in rows] == [(1, 0), (2, 0), (3, 1), (4, 2)]
+    finally:
+        await engine.dispose()

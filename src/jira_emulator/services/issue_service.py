@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -35,6 +35,19 @@ def _infer_custom_field_type(value):
     if isinstance(value, (int, float)):
         return "number"
     return "string"
+
+
+async def next_link_sequence(db: AsyncSession, source_issue_id: int) -> int:
+    """Return the sequence for a new link from *source_issue_id*.
+
+    New links go after the source issue's existing links. Deleting a link
+    leaves the others' sequences alone, so this uses the highest value
+    rather than a count to avoid duplicates.
+    """
+    highest = (
+        await db.execute(select(func.max(IssueLink.sequence)).where(IssueLink.inward_issue_id == source_issue_id))
+    ).scalar_one_or_none()
+    return 0 if highest is None else highest + 1
 
 
 async def _get_or_create_custom_field(db: AsyncSession, field_id: str, value):
