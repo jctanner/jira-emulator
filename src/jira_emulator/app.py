@@ -207,11 +207,20 @@ def create_app() -> FastAPI:
 
     app.add_middleware(RequestLoggingMiddleware)
 
+    settings = get_settings()
+
+    # Optional rate-limit fault injection. It sits outside the v3 rewrite so
+    # rules match the path the client sent, and inside the request audit so
+    # the audit records the 429s.
+    if settings.RATE_LIMIT_FAULT:
+        from jira_emulator.rate_limit_fault import FaultRule, RateLimitFaultMiddleware
+
+        app.add_middleware(RateLimitFaultMiddleware, rule=FaultRule.parse(settings.RATE_LIMIT_FAULT))
+
     # Request audit, added last so it is outermost and records the path the
     # client sent (before the v3 rewrite).
     from jira_emulator.request_audit import RequestAudit, RequestAuditMiddleware
 
-    settings = get_settings()
     app.state.request_audit = RequestAudit(settings.REQUEST_AUDIT_MAX_ENTRIES, settings.REQUEST_AUDIT_MAX_BODY_BYTES)
     app.add_middleware(RequestAuditMiddleware, audit=app.state.request_audit)
 
