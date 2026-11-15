@@ -1,13 +1,14 @@
-"""Metadata listing endpoints: priorities, statuses, resolutions, issue types."""
+"""Metadata listing endpoints: priorities, statuses, resolutions, issue types, labels."""
 
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jira_emulator.auth.middleware import get_current_user
 from jira_emulator.config import get_settings
 from jira_emulator.database import get_db
 from jira_emulator.models.issue_type import IssueType
+from jira_emulator.models.label import Label
 from jira_emulator.models.priority import Priority
 from jira_emulator.models.resolution import Resolution
 from jira_emulator.models.status import Status
@@ -154,3 +155,34 @@ async def list_issue_types(
         }
         for it in issue_types
     ]
+
+
+@router.get("/label")
+async def list_labels(
+    startAt: int = Query(default=0, ge=0),
+    maxResults: int = Query(default=1000, ge=0),
+    query: str | None = Query(default=None),
+    scope: str | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Jira's paginated label list (``GET /rest/api/{2,3}/label``).
+
+    ``query`` is a case-insensitive *prefix* filter applied before
+    pagination. ``scope`` (RECENT_PROJECTS / ALL_BROWSEABLE_PROJECTS) is
+    accepted; the emulator has no per-project browse permissions, so every
+    scope sees all labels.
+    """
+    stmt = select(Label.label).distinct()
+    if query:
+        escaped = query.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        stmt = stmt.where(func.lower(Label.label).like(f"{escaped}%", escape="\\"))
+    labels = sorted((await db.execute(stmt)).scalars().all())
+    page = labels[startAt : startAt + maxResults]
+    return {
+        "isLast": startAt + len(page) >= len(labels),
+        "maxResults": maxResults,
+        "startAt": startAt,
+        "total": len(labels),
+        "values": page,
+    }

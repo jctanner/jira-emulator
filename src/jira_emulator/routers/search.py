@@ -1,4 +1,14 @@
-"""Search endpoints: /rest/api/2/search (GET and POST)."""
+"""Search endpoints.
+
+* ``/search`` (GET and POST): the legacy search, kept for jira-python and
+  existing emulator clients. Offset pagination with ``total`` on v2; v3
+  adds ``nextPageToken``/``isLast``. Jira Cloud removed it in 2025
+  (CHANGE-2598).
+* ``/search/jql`` (GET and POST): Jira Cloud's enhanced search, on v2 and
+  v3 alike: cursor pagination, no ``total``, bounded JQL, ``id``-only
+  fields by default.
+* ``/search/approximate-count`` (POST).
+"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +17,7 @@ from jira_emulator.auth.middleware import get_current_user
 from jira_emulator.config import get_settings
 from jira_emulator.database import get_db
 from jira_emulator.models.user import User
-from jira_emulator.schemas.search import SearchRequest
+from jira_emulator.schemas.search import ApproximateCountRequest, SearchJqlRequest, SearchRequest
 from jira_emulator.services import search_service
 
 router = APIRouter(prefix="/rest/api/2")
@@ -22,17 +32,13 @@ def _get_api_version(request: Request) -> int:
 
 
 @router.post("/search")
-@router.post("/search/jql")
 async def search_issues_post(
     body: SearchRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    """Search for issues via JQL (POST).
-
-    Also mounted at ``/search/jql`` for Jira Cloud v3 clients.
-    """
+    """Search for issues via JQL (POST, legacy)."""
     settings = get_settings()
     api_version = _get_api_version(request)
     try:
@@ -55,7 +61,6 @@ async def search_issues_post(
 
 
 @router.get("/search")
-@router.get("/search/jql")
 async def search_issues_get(
     request: Request,
     jql: str = Query(default=""),
@@ -66,11 +71,7 @@ async def search_issues_get(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db, scope="function"),
 ):
-    """Search for issues via JQL (GET).
-
-    Also mounted at ``/search/jql`` to support Jira API v3 clients that
-    use ``GET /rest/api/3/search/jql`` (rewritten to v2 by middleware).
-    """
+    """Search for issues via JQL (GET, legacy)."""
     settings = get_settings()
     api_version = _get_api_version(request)
 
@@ -95,3 +96,77 @@ async def search_issues_get(
             status_code=400,
             detail=_jira_error([str(exc)]),
         )
+
+
+def _split_fields(values: list[str] | None) -> list[str] | None:
+    """Flatten repeated and comma-separated ``fields`` values."""
+    if not values:
+        return None
+    fields = [f.strip() for v in values for f in v.split(",") if f.strip()]
+    return fields or None
+
+
+async def _search_jql(request: Request, db: AsyncSession, current_user: User, **kwargs):
+    # Invalid or unbounded JQL raises ValueError, which the app's handler
+    # turns into Jira's 400 ``{"errorMessages": [...], "errors": {}}``.
+    return await search_service.search_issues_jql(
+        db,
+        current_user=current_user,
+        base_url=get_settings().BASE_URL,
+        api_version=_get_api_version(request),
+        **kwargs,
+    )
+
+
+@router.post("/search/jql")
+async def search_jql_post(
+    body: SearchJqlRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Jira Cloud enhanced search (POST), REST v2 and v3."""
+    return await _search_jql(
+        request,
+        db,
+        current_user,
+        jql=body.jql,
+        max_results=body.maxResults,
+        fields_filter=_split_fields(body.fields),
+        expand=body.expand,
+        next_page_token=body.nextPageToken,
+    )
+
+
+@router.get("/search/jql")
+async def search_jql_get(
+    request: Request,
+    jql: str = Query(default=""),
+    nextPageToken: str | None = Query(default=None),
+    maxResults: int = Query(default=50),
+    fields: list[str] | None = Query(default=None),
+    expand: str | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Jira Cloud enhanced search (GET), REST v2 and v3."""
+    return await _search_jql(
+        request,
+        db,
+        current_user,
+        jql=jql,
+        max_results=maxResults,
+        fields_filter=_split_fields(fields),
+        expand=expand,
+        next_page_token=nextPageToken,
+    )
+
+
+@router.post("/search/approximate-count")
+async def search_approximate_count(
+    body: ApproximateCountRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Estimated number of issues matching bounded JQL: ``{"count": n}``."""
+    return await search_service.approximate_count(db, body.jql, current_user)

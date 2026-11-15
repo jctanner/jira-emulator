@@ -228,7 +228,7 @@ async def test_v3_search_jql_post(client: httpx.AsyncClient):
     assert resp.status_code == 200
 
     data = resp.json()
-    assert data["total"] == 3
+    assert "total" not in data  # Cloud /search/jql has no total
     assert data["isLast"] is False
     assert "nextPageToken" in data
     assert "startAt" not in data
@@ -262,7 +262,7 @@ async def test_v3_search_jql_get(client: httpx.AsyncClient):
     assert resp.status_code == 200
 
     data = resp.json()
-    assert data["total"] == 3
+    assert "total" not in data  # Cloud /search/jql has no total
     assert data["isLast"] is False
     assert "nextPageToken" in data
     assert "startAt" not in data

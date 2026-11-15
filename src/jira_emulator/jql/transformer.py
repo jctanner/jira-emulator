@@ -16,7 +16,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import lark
-from sqlalchemy import Integer, and_, cast, exists, not_, or_, select
+from sqlalchemy import Integer, and_, case, cast, exists, not_, or_, select
 from sqlalchemy.sql import func
 
 from jira_emulator.jql.functions import is_relative_date, relative_date_to_datetime, resolve_function
@@ -162,6 +162,16 @@ class JQLTransformer:
         field_name = self._extract_field(node.children[0])
         op = self._extract_op(node.children[1])
         value = self._extract_value(node.children[2])
+        if self._is_multi_value_field(field_name):
+            # ``field = EMPTY`` / ``field != EMPTY``
+            if value is None and op in ("op_eq", "op_ne"):
+                return self._build_is_empty(field_name, negate=op == "op_ne")
+            if op == "op_ne":
+                # Jira: "!=" never matches a field that has no value.
+                return and_(
+                    self._build_comparison(field_name, op, value),
+                    self._build_is_empty(field_name, negate=True),
+                )
         return self._build_comparison(field_name, op, value)
 
     def _handle_in_clause(self, node: lark.Tree):
@@ -170,7 +180,38 @@ class JQLTransformer:
         # Find the value_list child (skip KW_IN token)
         value_list_node = self._find_child_tree(node, "value_list")
         values = self._extract_value_list(value_list_node)
+        if self._is_multi_value_field(field_name) and None in values:
+            present = [v for v in values if v is not None]
+            is_empty = self._build_is_empty(field_name, negate=False)
+            if not present:
+                return is_empty
+            return or_(self._build_in(field_name, present, negate=False), is_empty)
         return self._build_in(field_name, values, negate=False)
+
+    _MULTI_VALUE_FIELDS = frozenset(
+        {
+            "labels",
+            "component",
+            "fixversion",
+            "fixversions",
+            "affectedversion",
+            "affectedversions",
+            "sprint",
+        }
+    )
+
+    def _is_multi_value_field(self, field: str) -> bool:
+        """Fields stored as child rows, where "no value" means no row.
+
+        Their negative operators are built from ``NOT EXISTS`` and would
+        otherwise match issues where the field is empty.
+        """
+        return (
+            field in self._MULTI_VALUE_FIELDS
+            or field.startswith("customfield_")
+            or re.match(r"^cf\[\d+\]$", field, re.IGNORECASE) is not None
+            or self._PROPERTY_RE.match(field) is not None
+        )
 
     def _handle_not_in_clause(self, node: lark.Tree):
         """``field NOT IN (v1, v2, ...)``"""
@@ -178,6 +219,14 @@ class JQLTransformer:
         # Find the value_list child (skip NOT_IN token)
         value_list_node = self._find_child_tree(node, "value_list")
         values = self._extract_value_list(value_list_node)
+        if self._is_multi_value_field(field_name):
+            # Jira: "NOT IN" never matches a field that has no value; users
+            # write ``... OR field is EMPTY`` to include those issues.
+            present = [v for v in values if v is not None]
+            has_value = self._build_is_empty(field_name, negate=True)
+            if not present:
+                return has_value
+            return and_(self._build_in(field_name, present, negate=True), has_value)
         return self._build_in(field_name, values, negate=True)
 
     def _handle_is_empty_clause(self, node: lark.Tree):
@@ -306,10 +355,22 @@ class JQLTransformer:
             return None
         return str(token)
 
-    @staticmethod
-    def _normalise_field(name: str) -> str:
+    # Jira Cloud's "work item" and "space" terminology (2025) added JQL
+    # aliases next to the old names; both spellings must work. ``id`` is an
+    # older alias of ``issuekey`` that also accepts numeric issue ids.
+    _FIELD_ALIASES = {
+        "space": "project",
+        "worktype": "issuetype",
+        "workitemkey": "issuekey",
+        "workitem": "issuekey",
+        "id": "issuekey",
+    }
+
+    @classmethod
+    def _normalise_field(cls, name: str) -> str:
         """Normalise a JQL field name to a canonical lowercase form."""
-        return name.strip().lower()
+        field = name.strip().lower()
+        return cls._FIELD_ALIASES.get(field, field)
 
     # Regex for issue.property[key] or issue.property[key].sub.path
     _PROPERTY_RE = re.compile(r"^issue\.property\[([^\]]+)\]((?:\.[a-zA-Z0-9_.]+)*)$", re.IGNORECASE)
@@ -360,8 +421,22 @@ class JQLTransformer:
     # Build filter expressions
     # ------------------------------------------------------------------
 
+    _KEY_FIELDS = frozenset({"key", "issuekey"})
+
+    @staticmethod
+    def _key_or_id_match(value):
+        """``issuekey`` matches an issue key or, for a number, an issue id."""
+        text = str(value).strip()
+        if text.isdigit():
+            return Issue.id == int(text)
+        return func.lower(Issue.key) == text.lower()
+
     def _build_comparison(self, field: str, op: str, value):
         """Build a single comparison clause."""
+
+        if field in self._KEY_FIELDS and value is not None and op in ("op_eq", "op_ne"):
+            match = self._key_or_id_match(value)
+            return match if op == "op_eq" else ~match
 
         # --- Direct column fields ---
         col = self._get_column(field)
@@ -696,6 +771,26 @@ class JQLTransformer:
 
     # --- custom fields (cf[NNNNN] / customfield_NNNNN) ---
 
+    # Custom field types that hold free text. Jira Cloud (CHANGE-3440,
+    # October 2026) treats ``=``, ``IN`` and ``NOT IN`` on text fields as an
+    # exact *phrase* search anywhere in the value; select-like fields keep
+    # whole-value matching.
+    _TEXT_CUSTOM_FIELD_TYPES = frozenset({"string", "text", "textfield", "textarea"})
+
+    def _custom_field_value_match(self, field_id: str, value):
+        """The value condition ``field = value`` uses for one custom field."""
+        text_subq = select(CustomField.id).where(
+            CustomField.field_id == field_id,
+            func.lower(CustomField.field_type).in_(self._TEXT_CUSTOM_FIELD_TYPES),
+        )
+        return case(
+            (
+                IssueCustomFieldValue.custom_field_id.in_(text_subq),
+                func.jql_phrase_match(IssueCustomFieldValue.value_string, str(value)) == 1,
+            ),
+            else_=func.lower(IssueCustomFieldValue.value_string) == func.lower(str(value)),
+        )
+
     def _build_custom_field_clause(self, op: str, value, field_id: str):
         cf_subq = select(CustomField.id).where(CustomField.field_id == field_id)
         if op == "op_eq":
@@ -703,7 +798,7 @@ class JQLTransformer:
                 select(IssueCustomFieldValue.id).where(
                     IssueCustomFieldValue.issue_id == Issue.id,
                     IssueCustomFieldValue.custom_field_id.in_(cf_subq),
-                    func.lower(IssueCustomFieldValue.value_string) == func.lower(str(value)),
+                    self._custom_field_value_match(field_id, value),
                 )
             )
         if op == "op_ne":
@@ -817,6 +912,10 @@ class JQLTransformer:
 
     def _build_in(self, field: str, values: list, *, negate: bool):
         """Build IN or NOT IN expressions."""
+
+        if field in self._KEY_FIELDS and values and all(v is not None for v in values):
+            match = or_(*[self._key_or_id_match(v) for v in values])
+            return ~match if negate else match
 
         # Direct columns
         col = self._get_column(field)
@@ -945,12 +1044,11 @@ class JQLTransformer:
     def _build_custom_field_in(self, field_id: str, values: list, negate: bool):
         """Build IN / NOT IN for custom field values."""
         cf_subq = select(CustomField.id).where(CustomField.field_id == field_id)
-        lower_vals = [func.lower(str(v)) for v in values]
         cf_exists = exists(
             select(IssueCustomFieldValue.id).where(
                 IssueCustomFieldValue.issue_id == Issue.id,
                 IssueCustomFieldValue.custom_field_id.in_(cf_subq),
-                func.lower(IssueCustomFieldValue.value_string).in_(lower_vals),
+                or_(*[self._custom_field_value_match(field_id, v) for v in values]),
             )
         )
         return ~cf_exists if negate else cf_exists
@@ -987,6 +1085,11 @@ class JQLTransformer:
         if field in ("fixversion", "fixversions"):
             fv_exists = exists(select(IssueFixVersion.issue_id).where(IssueFixVersion.issue_id == Issue.id))
             return fv_exists if negate else ~fv_exists
+
+        # affectedVersion IS EMPTY
+        if field in ("affectedversion", "affectedversions"):
+            av_exists = exists(select(IssueAffectsVersion.issue_id).where(IssueAffectsVersion.issue_id == Issue.id))
+            return av_exists if negate else ~av_exists
 
         # statusCategory IS EMPTY -- status has no category set
         if field == "statuscategory":
