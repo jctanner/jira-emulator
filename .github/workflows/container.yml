@@ -3,14 +3,17 @@ name: Container image
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ["20[0-9][0-9].[0-9][0-9].[0-9][0-9]*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+permissions:
+  contents: read
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   image:
@@ -18,61 +21,112 @@ jobs:
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: default
+            port: 8080
+            dockerfile: Dockerfile
+            image: ghcr.io/${{ github.repository }}
+          - variant: k3s
+            port: 80
+            dockerfile: Dockerfile.k3s
+            image: ghcr.io/${{ github.repository }}-k3s
     steps:
       - uses: actions/checkout@v4
-
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: python3 scripts/release_version.py "$GITHUB_REF_NAME"
       - uses: docker/setup-buildx-action@v3
-
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ matrix.image }}
+          flavor: latest=false
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=long
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=tag
             type=ref,event=pr
-
-      # Build once into the local daemon so the image can be smoke-tested
-      # before anything is pushed.
-      - uses: docker/build-push-action@v6
+      - name: Build once for smoke testing and publishing
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           load: true
-          tags: jira-emulator:smoke
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
+          tags: release-smoke:local
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
       - name: Smoke test
+        env:
+          VARIANT: ${{ matrix.variant }}
+          CONTAINER_PORT: ${{ matrix.port }}
         run: |
-          docker run -d --name jira-emulator -p 8080:8080 jira-emulator:smoke
+          extra=()
+          if [[ "$VARIANT" == k3s ]]; then
+            printf ':80 {\n  reverse_proxy 127.0.0.1:8080\n}\n' > smoke.Caddyfile
+            chmod 644 smoke.Caddyfile
+            extra=(-v "$PWD/smoke.Caddyfile:/etc/caddy/Caddyfile:ro")
+          fi
+          docker run -d --name release-smoke -p "127.0.0.1:8080:$CONTAINER_PORT" "${extra[@]}" release-smoke:local
           for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/rest/api/2/priority > /dev/null; then
-              echo "jira-emulator is up"
+            if curl --max-time 2 -fsS http://127.0.0.1:8080/rest/api/2/priority > /dev/null; then
               exit 0
             fi
             sleep 2
           done
-          docker logs jira-emulator
           exit 1
-
-      - if: github.event_name != 'pull_request'
+      - name: Container logs and cleanup
+        if: always()
+        run: |
+          docker logs release-smoke || true
+          docker rm -f release-smoke || true
+      - if: github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/'))
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - if: github.event_name != 'pull_request'
-        uses: docker/build-push-action@v6
+      - name: Publish the tested image
+        id: publish
+        if: github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/'))
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE_REPOSITORY: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          image="${IMAGE_REPOSITORY,,}"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            if docker manifest inspect "$image:$GITHUB_REF_NAME" > /dev/null 2>manifest-error; then
+              echo "Release image already exists; immutable tags cannot be republished."
+              exit 1
+            fi
+            if ! grep -Eqi 'manifest unknown|no such manifest|not found' manifest-error; then
+              cat manifest-error
+              exit 1
+            fi
+          fi
+          while IFS= read -r tag; do
+            docker tag release-smoke:local "$tag"
+            docker push "$tag"
+          done <<< "$TAGS"
+          digest=$(docker image inspect release-smoke:local --format '{{index .RepoDigests 0}}')
+          echo "image=$digest" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$digest" > image.txt
+      - name: Record published image
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
         with:
-          context: .
-          file: Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
+          name: published-image-${{ matrix.variant }}
+          path: image.txt
+          retention-days: 30
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: image
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
