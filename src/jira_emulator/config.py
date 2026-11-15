@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     # GET /api/admin/requests.  0 entries disables it.
     REQUEST_AUDIT_MAX_ENTRIES: int = Field(default=2000, ge=0)
     REQUEST_AUDIT_MAX_BODY_BYTES: int = Field(default=131072, ge=0)
+    # Optional 429 fault injection (rate_limit_fault.py). Empty: off.
+    RATE_LIMIT_FAULT: str = ""
     WEBHOOKS_ENABLED: bool = True
     WEBHOOK_ALLOW_INSECURE_HTTP: bool = False
     WEBHOOK_ALLOW_PRIVATE_NETWORKS: bool = False
