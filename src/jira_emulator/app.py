@@ -18,6 +18,7 @@ from jira_emulator.exceptions import (
     InvalidTransitionError,
     IssueNotFoundError,
     JQLParseError,
+    LegacyApiRemovedError,
     ProjectNotFoundError,
 )
 
@@ -277,6 +278,10 @@ def create_app() -> FastAPI:
             status_code=400,
             content={"errorMessages": [], "errors": {exc.field: exc.code}},
         )
+
+    @app.exception_handler(LegacyApiRemovedError)
+    async def legacy_api_removed_handler(request: Request, exc: LegacyApiRemovedError):
+        return JSONResponse(status_code=410, content={"errorMessages": [str(exc)], "errors": {}})
 
     @app.exception_handler(IssueNotFoundError)
     async def issue_not_found_handler(request: Request, exc: IssueNotFoundError):

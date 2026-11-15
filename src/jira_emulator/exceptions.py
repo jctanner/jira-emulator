@@ -49,3 +49,12 @@ class DescriptionContentLimitExceededError(ValueError):
         self.limit = limit
         self.actual_length = actual_length
         super().__init__(f"Description exceeds the configured limit of {limit} logical characters")
+
+
+class LegacyApiRemovedError(JiraEmulatorError):
+    """Raised for an API that Jira Cloud has removed, when the emulator mirrors that (410)."""
+
+    MESSAGE = "The requested API has been removed. Please use the newer, enhanced search-based API instead."
+
+    def __init__(self):
+        super().__init__(self.MESSAGE)
