@@ -168,6 +168,7 @@ async def test_issuelink_webhooks_use_jira_source_destination_shape(client: http
             "isSystemLinkType": False,
         },
         "systemLink": False,
+        "sequence": 0,
     }
     for event, row in by_event.items():
         body = json.loads(row.payload)

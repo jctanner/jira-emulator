@@ -118,7 +118,11 @@ async def init_db(engine=None):
         # ``create_all`` does not alter tables that predate a model change.
         # Keep the emulator's lightweight SQLite deployment upgradeable without
         # requiring a separate migration runner.
-        for table, column in (("webhooks", "verify_ssl"), ("webhook_outbox", "verify_ssl")):
+        for table, column, ddl in (
+            ("webhooks", "verify_ssl", "BOOLEAN NOT NULL DEFAULT 1"),
+            ("webhook_outbox", "verify_ssl", "BOOLEAN NOT NULL DEFAULT 1"),
+            ("issue_links", "sequence", "INTEGER"),
+        ):
             exists = await conn.execute(
                 text("SELECT 1 FROM sqlite_master WHERE type='table' AND name=:table"), {"table": table}
             )
@@ -127,7 +131,18 @@ async def init_db(engine=None):
             columns = await conn.execute(text(f"PRAGMA table_info({table})"))
             names = {row[1] for row in columns.fetchall()}
             if column not in names:
-                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} BOOLEAN NOT NULL DEFAULT 1"))
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+        # Links created before ``sequence`` existed keep their creation (id)
+        # order within each source issue.
+        await conn.execute(
+            text(
+                "UPDATE issue_links SET sequence = ("
+                "SELECT COUNT(*) FROM issue_links AS earlier"
+                " WHERE earlier.inward_issue_id = issue_links.inward_issue_id"
+                " AND earlier.id < issue_links.id"
+                ") WHERE sequence IS NULL"
+            )
+        )
 
 
 def reset_engine():

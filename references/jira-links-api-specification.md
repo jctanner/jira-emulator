@@ -246,8 +246,27 @@ Ids are numbers, unlike in the REST resources:
 - Atlassian publishes no schema for this payload. The shape follows payloads
   posted by Jira Cloud users, for example
   <https://community.atlassian.com/forums/Jira-questions/Distinguish-between-subtask-created-and-issue-linked/qaq-p/1332926>.
-- Jira's `sequence` field is omitted because the emulator does not model link
-  ordering.
+- `issueLink.sequence` is the link's position among the source issue's links
+  (see "Link ordering"). Community payloads show it next to `systemLink`.
+
+### Link ordering
+
+Jira stores a `sequence` on each link (`IssueLink.getSequence()`; the
+`IssueLinkManager.createIssueLink` sequence argument is "the order in which
+this link will appear in the UI"). The emulator models it as follows:
+
+- Sequences belong to the **source** issue (the create request's
+  `inwardIssue`) across all link types, starting at 0.
+- A new link goes last: its sequence is one more than the source's highest.
+- Deleting a link leaves the other sequences alone, so gaps are normal.
+- `GET /issue` lists the links where the issue is the source (`outwardIssue`
+  entries) by sequence, then id. Links where it is the destination
+  (`inwardIssue` entries) come first, in id order.
+- Import assigns sequences in import order. Databases created before this
+  column existed are backfilled in id order on startup.
+- Jira Cloud has no public REST endpoint for reordering links, so the
+  emulator has none either. The Jira UI's display order can also be set by
+  `jira.view.issue.links.sort.order`; the emulator does not model that.
 
 ### Permissions (not modelled)
 

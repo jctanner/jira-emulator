@@ -45,6 +45,7 @@ def _webhook_issue_link(link: IssueLink, link_type: IssueLinkType) -> dict:
             "isSystemLinkType": False,
         },
         "systemLink": False,
+        "sequence": link.sequence,
     }
 
 
@@ -123,6 +124,7 @@ async def create_issue_link(
         link_type_id=link_type.id,
         inward_issue_id=inward_issue.id,
         outward_issue_id=outward_issue.id,
+        sequence=await issue_service.next_link_sequence(db, inward_issue.id),
     )
     db.add(link)
     await db.flush()
