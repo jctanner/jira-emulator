@@ -1,6 +1,7 @@
 """Async SQLAlchemy engine and session management for SQLite."""
 
 import asyncio
+import re
 import weakref
 
 from fastapi import Request
@@ -26,11 +27,37 @@ def _set_sqlite_pragmas(dbapi_conn, connection_record):
     cursor.close()
 
 
+_WORD_RE = re.compile(r"\w+")
+
+
+def phrase_match(text_value, phrase) -> int:
+    """Whether *phrase* occurs in *text_value* as a run of whole words.
+
+    Case-insensitive; punctuation and whitespace separate words. This is the
+    emulator's approximation of Jira's exact phrase search (CHANGE-3440),
+    without Jira's stemming.
+    """
+    if text_value is None or phrase is None:
+        return 0
+    words = _WORD_RE.findall(str(text_value).lower())
+    wanted = _WORD_RE.findall(str(phrase).lower())
+    if not wanted:
+        return 0
+    n = len(wanted)
+    return int(any(words[i : i + n] == wanted for i in range(len(words) - n + 1)))
+
+
+def _register_sql_functions(dbapi_conn, connection_record):
+    """Register the Python SQL functions the JQL engine uses."""
+    dbapi_conn.create_function("jql_phrase_match", 2, phrase_match, deterministic=True)
+
+
 def create_engine(database_url: str | None = None):
     """Create an async SQLAlchemy engine."""
     url = database_url or get_settings().DATABASE_URL
     engine = create_async_engine(url, echo=False)
     event.listen(engine.sync_engine, "connect", _set_sqlite_pragmas)
+    event.listen(engine.sync_engine, "connect", _register_sql_functions)
     return engine
 
 

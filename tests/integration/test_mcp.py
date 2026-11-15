@@ -99,3 +99,36 @@ async def test_mcp_search(mcp_sse_url: str):
         assert not result.isError
         data = json.loads(result.content[0].text)
         assert data["total"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_mcp_search_labels_not_in_excludes_unlabelled(
+    mcp_sse_url: str, client: httpx.AsyncClient, auth_header: dict
+):
+    """Jira: NOT IN never matches an empty field (CC-63 audit, F1/F5)."""
+    tag = "cc63-mcp-labels"
+    keys = {}
+    for name, labels in (("bare", []), ("skip", [f"{tag}-skip"]), ("keep", [f"{tag}-keep"])):
+        resp = await client.post(
+            "/rest/api/2/issue",
+            json={
+                "fields": {
+                    "project": {"key": "TEST"},
+                    "summary": f"{tag} {name}",
+                    "issuetype": {"name": "Task"},
+                    "labels": labels,
+                }
+            },
+            headers=auth_header,
+        )
+        assert resp.status_code == 201
+        keys[name] = resp.json()["key"]
+
+    async with _mcp_session(mcp_sse_url) as session:
+        result = await session.call_tool(
+            "searchJiraIssuesUsingJql",
+            {"jql": f'space = TEST AND summary ~ "{tag}" AND labels not in ({tag}-skip)', "fields": ["labels"]},
+        )
+        assert not result.isError
+        data = json.loads(result.content[0].text)
+        assert {issue["key"] for issue in data["issues"]} == {keys["keep"]}

@@ -108,8 +108,11 @@ Every non-GET request under `/rest/` is recorded in memory (method, path as sent
 - **API versioning**: Both v2 and v3 are first-class. v3 requests are rewritten to v2 endpoints internally via middleware (`app.py`), with `request.state.api_version` used to branch response format where they differ (e.g., pagination, ADF). Both must be tested independently.
 - **Pagination**: v2 uses `startAt` (0-indexed) + `maxResults` (default 50). v3 uses `nextPageToken` (opaque base64 cursor) + `maxResults` + `isLast`. The v3 response omits `startAt` and includes `nextPageToken` only when more results exist.
 - **Search endpoints**: All combinations are implemented:
-  - v2: `GET /search`, `POST /search`, `GET /search/jql`, `POST /search/jql` — offset pagination
-  - v3: same paths via `/rest/api/3/` — cursor pagination (`nextPageToken`/`isLast`)
+  - Legacy `GET /search`, `POST /search`: v2 uses offset pagination with `total`; v3 uses cursor pagination (`nextPageToken`/`isLast`) and keeps `total`. Jira Cloud removed these in 2025, but jira-python and existing emulator clients still use them.
+  - Enhanced `GET /search/jql`, `POST /search/jql`: Jira Cloud's contract on **both v2 and v3**. It uses cursor pagination with no `total`/`startAt`/`maxResults`, `fields` defaults to `id`, unbounded JQL (empty or `ORDER BY` only) is rejected with 400, and `expand` is a string.
+  - `POST /search/approximate-count`: `{"count": n}` for bounded JQL.
+- **JQL empty values**: `!=` and `NOT IN` never match an issue whose field is empty, as in Jira; write `OR field is EMPTY` to include those issues.
+- **Jira Cloud fidelity**: `docs/plans/jira-cloud-behaviour-audit-2026-11.md` tracks Jira Cloud changes and which ones the emulator mirrors.
 - **Seed projects**: RHOAIENG, RHAIRFE, RHAISTRAT, TEST with standard workflows
 
 ## References

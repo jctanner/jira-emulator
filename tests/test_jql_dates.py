@@ -37,7 +37,7 @@ async def _backdate(key, *, created=None, resolved=None, due=None):
 
 async def _search(client, jql, version=2):
     path = "/rest/api/2/search" if version == 2 else "/rest/api/3/search/jql"
-    resp = await client.post(path, json={"jql": jql, "maxResults": 50}, headers=AUTH)
+    resp = await client.post(path, json={"jql": jql, "maxResults": 50, "fields": ["key"]}, headers=AUTH)
     assert resp.status_code == 200, resp.text
     return {issue["key"] for issue in resp.json()["issues"]}
 
@@ -101,7 +101,7 @@ async def test_relative_dates_filter_on_created_and_resolved(client, version):
     # backdated issues are still open, so its statusCategory clause is left out).
     resp = await client.post(
         "/rest/api/2/search" if version == 2 else "/rest/api/3/search/jql",
-        json={"jql": "resolutiondate >= -60w ORDER BY resolved DESC", "maxResults": 50},
+        json={"jql": "resolutiondate >= -60w ORDER BY resolved DESC", "maxResults": 50, "fields": ["key"]},
         headers=AUTH,
     )
     assert resp.status_code == 200, resp.text

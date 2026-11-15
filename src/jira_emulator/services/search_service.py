@@ -156,3 +156,95 @@ async def search_issues(
         "total": total,
         "issues": formatted_issues,
     }
+
+
+# ---------------------------------------------------------------------------
+# Jira Cloud enhanced search: /search/jql and /search/approximate-count
+# ---------------------------------------------------------------------------
+
+UNBOUNDED_JQL_MESSAGE = "Unbounded JQL queries are not allowed here. Please add a search restriction to your query."
+
+# Jira Cloud returns at most 5000 issues per page when only ids or keys are
+# requested; the emulator keeps its general 1000 cap for richer requests.
+_ID_ONLY_PAGE_CAP = 5000
+_PAGE_CAP = 1000
+
+
+def _bounded_where(jql: str, current_username: str | None) -> tuple[list, list]:
+    """Parse *jql*, rejecting empty or ORDER BY-only (unbounded) queries."""
+    if not jql or not jql.strip():
+        raise ValueError(UNBOUNDED_JQL_MESSAGE)
+    tree = parse_jql(jql)
+    where_clauses, order_by_clauses = JQLTransformer().transform(tree, current_username)
+    if not where_clauses:
+        raise ValueError(UNBOUNDED_JQL_MESSAGE)
+    return where_clauses, order_by_clauses
+
+
+async def search_issues_jql(
+    db: AsyncSession,
+    jql: str,
+    max_results: int = 50,
+    fields_filter: list[str] | None = None,
+    expand: str | None = None,
+    current_user: User | None = None,
+    base_url: str = "",
+    api_version: int = 2,
+    next_page_token: str | None = None,
+) -> dict:
+    """Execute a Jira Cloud ``/search/jql`` request (REST v2 and v3).
+
+    Unlike the legacy ``/search``, the response is cursor-paginated on both
+    API versions and has no ``total``, ``startAt`` or ``maxResults``; the
+    JQL must be bounded; and ``fields`` defaults to ``id`` only.
+    """
+    fields = fields_filter or ["id"]
+    id_only = all(f in ("id", "key") for f in fields)
+    if max_results is None or max_results <= 0:
+        max_results = 50
+    max_results = min(max_results, _ID_ONLY_PAGE_CAP if id_only else _PAGE_CAP)
+    start_at = decode_page_token(next_page_token) if next_page_token else 0
+
+    current_username = current_user.username if current_user else None
+    where_clauses, order_by_clauses = _bounded_where(jql, current_username)
+
+    stmt = select(Issue).options(*issue_service._issue_load_options()).where(*where_clauses)
+    if order_by_clauses:
+        stmt = stmt.order_by(*order_by_clauses)
+    else:
+        # Same default as the legacy search: key, by project then number.
+        stmt = stmt.order_by(*(part.asc() for part in JQLTransformer._KEY_ORDER))
+    # Fetch one extra row to learn whether another page exists.
+    stmt = stmt.offset(start_at).limit(max_results + 1)
+    rows = list((await db.execute(stmt)).scalars().unique().all())
+    is_last = len(rows) <= max_results
+    page = rows[:max_results]
+
+    issues = []
+    for iss in page:
+        if fields == ["id"]:
+            issues.append({"id": str(iss.id)})
+            continue
+        issues.append(
+            await issue_service.format_issue_response(
+                issue=iss,
+                base_url=base_url,
+                db=db,
+                fields_filter=fields,
+                api_version=api_version,
+                expand=expand,
+            )
+        )
+
+    response: dict = {"issues": issues, "isLast": is_last}
+    if not is_last:
+        response["nextPageToken"] = encode_page_token(start_at + len(page))
+    return response
+
+
+async def approximate_count(db: AsyncSession, jql: str, current_user: User | None = None) -> dict:
+    """``POST /search/approximate-count``: ``{"count": n}`` for bounded JQL."""
+    current_username = current_user.username if current_user else None
+    where_clauses, _ = _bounded_where(jql, current_username)
+    count = (await db.execute(select(sa_func.count()).select_from(Issue).where(*where_clauses))).scalar_one()
+    return {"count": count}
